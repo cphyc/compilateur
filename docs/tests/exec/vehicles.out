@@ -1,0 +1,10 @@
+t at 10
+c at 10
+vehicle moves
+c at 70
+vehicle moves
+c at 140
+await: position = 10
+truck moves
+t at 65
+c at 140
