@@ -71,6 +71,8 @@ rule token = parse
   | "--"    { DECR }
   | '('     { LPAREN }
   | ')'     { RPAREN }
+  | '{'     { LBRACE }
+  | '}'     { RBRACE }
   | '.'     { DOT }
   | "()"    { CALL }
   | "->"    { POINTER }
@@ -80,7 +82,6 @@ rule token = parse
   | "/*"    { comment lexbuf }
 (* On a un "//", on va à la ligne suivante et on réévalue *)
   | "//"    { newline lexbuf; token lexbuf }
-(* Maladroit ? *)
   | integer as s { CST (int_of_string s) }
   | eof     { raise (Lexing_error "reached end of file") }
   | _ as c  { raise (Lexing_error ("illegal character: " ^ String.make 1 c)) }
