@@ -36,6 +36,7 @@
 let digit = ['0'-'9']
 let alpha = ['a'-'Z' 'a'-'Z']
 let ident = (alpha | '_') (alpha | '_' | digit)*
+let tident = (alpha | '_') (alpha | '_' | digit)*
 let octal_digit = ['0'-'7']
 let hexa_digit = ['0'-'9' 'a'-'f' 'A'-'F']
 let integer = '0' | ['1'-'9'] digit* | '0' octal_digit+ | "0x" hexa_digit+
@@ -48,6 +49,8 @@ let string = '\"' carac* '\"'
 let space = [' ' '\t']
 
 rule token = parse
+  | "#include <iostream>" { IOSTREAM }
+  | "std::cout" { COUT }
   | "\n"    { newline lexbuf; token lexbuf }
   | space+  { token lexbuf }
   | ident as id { id_or_kwd id }
@@ -60,15 +63,16 @@ rule token = parse
   | "<="    { LE }
   | '>'     { GT }
   | ">="    { GE }
+  | "<<"    { DLT }
 (* Il faut intégrer le support des opérateurs unaires '+', '-' et '*' *)
   | '+'     { PLUS }
   | '-'     { MINUS }
-  | '*'     { TIMES }
+  | '*'     { STAR }
   | '/'     { DIV }
   | '%'     { MOD }
   | '!'     { NEG }
-  | "++"    { INCR }
-  | "--"    { DECR }
+  | "++"    { DPLUS }
+  | "--"    { DMINUS }
   | '('     { LPAREN }
   | ')'     { RPAREN }
   | '{'     { LBRACE }
@@ -76,6 +80,7 @@ rule token = parse
   | '.'     { DOT }
   | "()"    { CALL }
   | "->"    { POINTER }
+  | '&'     { AMP }
   | ','     { COMMA }
   | ':'     { COLON }
   | ";"     { SEMICOLON }
