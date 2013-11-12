@@ -36,12 +36,15 @@
 let digit = ['0'-'9']
 let alpha = ['a'-'Z' 'a'-'Z']
 let ident = (alpha | '_') (alpha | '_' | digit)*
-let integer = '0' | ['1'-'9'] digit* | '0' octal_digit+ | '0x' hexa_digit+
 let octal_digit = ['0'-'7']
 let hexa_digit = ['0'-'9' 'a'-'f' 'A'-'F']
+let integer = '0' | ['1'-'9'] digit* | '0' octal_digit+ | "0x" hexa_digit+
 (* Il faut enlever le '\' et le '"' *)
-let carac = [32-33 (* 34 : " *) 35-91 (*92 : \ *) 93-127] | "\\" | "\"" | "\n" | "\t" | "\x" hexa_digit hexa_digit
-let string = \" carac* \"
+let carac = ['\032'-'\033' '\035'-'\038' '\040'-'\091'
+  '\093'-'\127'] | "\\\\" | "\\\"" | "\\\'" 
+  |"\\x" hexa_digit hexa_digit
+  |"\\n" |"\\t"
+let string = '\"' carac* '\"'
 let space = [' ' '\t']
 
 rule token = parse
