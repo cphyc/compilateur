@@ -4,9 +4,13 @@
 
 %token <int> CST
 %token <string> IDENT
+%token <string> TIDENT
+%token <string> STRING
+%token IOSTREAM COUT
 %token CLASS ELSE FALSE FOR IF INT NEW NULL PUBLIC RETURN THIS TRUE VIRTUAL VOID
-%token WHILE ASSIGN OR AND EQ NEQ LT LE GT GE PLUS MINUS STAR DIV MOD NEG INCR
-%token DECR LPAREN RPAREN DOT CALL POINTER AMP COMMA COLON SEMICOLON EOF
+%token WHILE ASSIGN OR AND EQ NEQ LT LE GT GE DLT PLUS DPLUS DMINUS MINUS STAR DIV
+%token MOD NEG INCR DECR LPAREN RPAREN LBRACE RBRACE DOT CALL POINTER AMP COMMA 
+%token COLON SEMICOLON EOF
 
 /* Associativity, priority */
 %left OR
@@ -18,20 +22,20 @@
 %nonassoc ELSE
 
 /* Entry point for grammary */
-%start prog
+%start file
 
 /* Type of the lexer's returned values */
 %type <Ast.declaration list> file
 %%
 
 file:
-  "#include <iostream>)"?; d = decl*;  EOF { d }
+  IOSTREAM?; d = decl*;  EOF { d }
 ; 
 
 decl:
 | e = decl_vars {}
 | e = decl_class {}
-| e = proto ; bloc
+| e = proto block {}
 ;
 
 decl_vars:
@@ -40,13 +44,18 @@ decl_vars:
 ;
  
 decl_class: 
-  CLASS; i = ident; supers? LBRACE PUBLIC COLON m = member* RBRACE SEMICOLON
+  CLASS; i = TIDENT; supers?; LBRACE; PUBLIC; COLON; m = member*; RBRACE; SEMICOLON;
    {}
 ;
 
 supers:
-  COLON slist = separated_list(COMMA, PUBLIC TIDENT) {}
+  COLON; slist = separated_nonempty_list(COMMA, pubtident) {}
 ;
+
+pubtident:
+ PUBLIC t = TIDENT {}
+;
+
 
 member:
 | e = decl_vars {}
@@ -54,14 +63,19 @@ member:
 ;
 
 proto: 
-  (typ qvar | tident | tident COLON COLON tiden) LPAREN 
-  a = separated_list(COMMA, argument) {}
+| typ qvar proto_end {}
+| TIDENT proto_end {}
+| TIDENT COLON COLON TIDENT proto_end {}
+;
+
+%inline proto_end:
+ LPAREN a = separated_list(COMMA, argument) RPAREN {}
 ;
 
 typ:
 | VOID {}
 | INT {}
-| tiden {}
+| TIDENT {}
 ;
 
 argument:
@@ -69,7 +83,7 @@ argument:
 ;
 
 var:
-| i = ident {}
+| i = TIDENT {}
 | STAR v = var {}
 | AMP v = var {}
 ;
@@ -81,23 +95,23 @@ qvar:
 ;
 
 qident:
-| i = ident {}
-| t = tident COLON COLON i = ident {}
+| i = IDENT {}
+| t = TIDENT COLON COLON i = IDENT {}
 ;
 
 expr:
-| i = int {}
-| THIS
-| FALSE
-| TRUE
-| NULL
+| i = INT {}
+| THIS {}
+| FALSE {}
+| TRUE {}
+| NULL {}
 | q = qident {}
 | STAR e = expr {}
-| e = expr DOT i = ident {}
-| e = expr POINTER i = ident {}
+| e = expr DOT i = IDENT {}
+| e = expr POINTER i = IDENT {}
 | e1 = expr ASSIGN e2 = expr {}
 | e = expr LPAREN elist = separated_list(COMMA, expr) RPAREN {}
-| NEW t = tident LPAREN elist = separated_list(COMMA, expr) RPAREN {}
+| NEW t = TIDENT LPAREN elist = separated_list(COMMA, expr) RPAREN {}
 | DPLUS e = expr {} 
 | DMINUS e = expr {}
 | e = expr DPLUS {}
@@ -129,24 +143,25 @@ operator:
 instruction:
 | SEMICOLON {}
 | e = expr {}
-| t = typ; v = var; 
-(EQ e = expr | EQ t = tident LPAREN elist = separated_list(COMMA, EXPR))? SEMICOLON
-{}
+| t = typ; v = var {}
+| t = typ; v = var; EQ; e = expr SEMICOLON {}
+| ty = typ; v = var; EQ ti = TIDENT;
+   LPAREN elist = separated_list(COMMA, expr) RPAREN SEMICOLON {}
 | IF LPAREN e = expr RPAREN i = instruction {}
-| IF LPAREN e = expr RPAREN i1 = instruction ELSE i2 = instructin {}
+| IF LPAREN e = expr RPAREN i1 = instruction ELSE i2 = instruction {}
 | WHILE LPAREN e = expr RPAREN i = instruction {}
 | FOR LPAREN elist1 = separated_list(COMMA, expr) SEMICOLON e2 = expr? 
    SEMICOLON elist3 = separated_list(COMMA, expr) RPAREN i = instruction {}
 | b = block {}
-| "std::cout" elist = separated_list(LE LE, expr_str) SEMICOLON {}
+| COUT elist = separated_nonempty_list(DLT, expr_str) SEMICOLON {}
 | RETURN e = expr? SEMICOLON {}
 ;
 
 expr_str:
 | e = expr {}
-| s = string {}
+| s = STRING {}
 ;
 
 block:
-  LBRACE i = instruction* RBRACE
+  LBRACE ilist = instruction* RBRACE {}
 ;
