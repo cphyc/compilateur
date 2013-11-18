@@ -25,11 +25,14 @@
 %start file
 
 /* Type of the lexer's returned values */
-%type <Ast.declaration list> file
+%type <Ast.fichier> file
 %%
 
 file:
-  IOSTREAM?; d = decl*;  EOF { d }
+  io = IOSTREAM?; d = decl*;  EOF 
+    {{iostr = false; decl = []; 
+      fichierLoc=$startpos, $endpos}} 
+(*bien evidemment, c'est completement faux*)
 ; 
 
 decl:
@@ -39,7 +42,7 @@ decl:
 ;
 
 decl_vars:
-  t = typ; vlist = separated_list(COMMA, var) { }
+  t = typ; vlist = separated_list(COMMA, var) {}
 
 ;
  

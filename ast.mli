@@ -112,5 +112,3 @@ and expr_str =
 |ExprStrStr of string
 
 and bloc = {blocCont : ins list; blocLoc: loc}
-type fichier = {iostr: bool; decl: decl list}
-and decl = |Declvars |Declclass |Protobloc

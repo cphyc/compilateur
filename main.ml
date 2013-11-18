@@ -18,6 +18,17 @@ let options =
 
 let usage = "usage: minic++ [option] file.c"
 
+(* localise une erreur en indiquant la ligne et la colonne *)
+let localisation (p1,p2) =
+  let l1 = p1.Lexing.pos_lnum and l2 = p2.Lexing.pos_lnum in
+  let c1 = p1.Lexing.pos_cnum - p1.Lexing.pos_bol + 1 in
+  let c2 = p2.Lexing.pos_cnum - p2.Lexing.pos_bol + 1 in
+  if l1 = l2
+  then eprintf "File \"%s\", line %d, characters %d-%d:\n" !ifile l1 c1 c2
+  else eprintf 
+    "File \"%s\", from line %d, character %d to line %d, character %d:\n" 
+    !ifile l1 c1 l2 c2
+
 let () = 
   (* Parsing de la ligne de commande *)
   Arg.parse options (set_file ifile) usage;
@@ -39,7 +50,7 @@ let () =
   let buf = Lexing.from_channel f in
 
   try
-    let p = Parser.prog Lexer.token buf in
+    let p = Parser.file Lexer.token buf in
     close_in f;
     
     if !parse_only then exit 0
@@ -48,16 +59,16 @@ let () =
   | Lexer.Lexing_error c -> 
         (* Erreur lexicale. On récupère sa position absolue et 
            on la convertit en numéro de ligne *)
-    localisation (Lexing.lexeme_start_p buf);
+    localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));
     eprintf "Erreur dans l'analyse lexicale: %s@." c;
     exit 1
   | Parser.Error -> 
       (* Erreur syntaxique. On récupère sa position absolue et on la 
          convertit en numéro de ligne *)
-    localisation (Lexing.lexeme_start_p buf);
+    localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));
     eprintf "Erreur dans l'analyse syntaxique@.";
     exit 1
-  | Interp.Error s-> 
+  (*| Interp.Error s-> 
       (* Erreur pendant l'interprétation *)
     eprintf "Erreur : %s@." s;
-    exit 1
+    exit 1*)
