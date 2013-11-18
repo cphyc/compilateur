@@ -26,7 +26,7 @@ $(BIN):$(CMO)
 .mly.mli:
 	ocamlyacc -v $<
 clean:
-	rm -f *.cm[io] *.o *~ *.annot *.automaton .depend sortie_test $(BIN) $(GENERATED) parser.output
+	rm -f *.cm[io] *.o *~ *.annot *.automaton .depend parser.conflicts sortie_test $(BIN) $(GENERATED) parser.output
 
 .depend depend:$(GENERATED)
 	rm -f .depend
