@@ -70,7 +70,7 @@ rule token = parse
   | '*'     { STAR }
   | '/'     { DIV }
   | '%'     { MOD }
-  | '!'     { NEG }
+  | '!'     { EXCL }
   | "++"    { DPLUS }
   | "--"    { DMINUS }
   | '('     { LPAREN }
@@ -78,7 +78,6 @@ rule token = parse
   | '{'     { LBRACE }
   | '}'     { RBRACE }
   | '.'     { DOT }
-  | "()"    { CALL }
   | "->"    { POINTER }
   | '&'     { AMP }
   | ','     { COMMA }

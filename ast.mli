@@ -1,6 +1,6 @@
 type loc = Lexing.position * Lexing.position
 
-type fichier = {iostr: bool; decl: decl list; fichierLoc: loc}
+type fichier = {iostr: bool; fichierDecl: decl list; fichierLoc: loc}
   
 and decl = 
 |DeclVars of declVars
@@ -18,30 +18,30 @@ and member =
 |MemberDeclVars of declVars
 |VirtualProto of bool * proto
 
-and proto = {protoTyp: typ; protoVar: protoVar; argumentList: argument list;
+and proto = {protoVar: protoVarT; argumentList: argument list;
              protoLoc: loc}
 
-and protoVar =
-|Qvar of qvar
+and protoVarT =
+|Qvar of typ * qvar
 |Qident of qident
 
-and typ = {typCont: typCont; typLoc: loc}
+and typ = {typCont: typContT; typLoc: loc}
 
-and typCont =
+and typContT =
 |TypVoid
 |TypInt
 |TypIdent of string
 
 and argument = {argumentTyp: typ; argumentVar: var; argumentLoc: loc}
 
-and var = {varCont: varCont; varLoc: loc}
-and varCont =
+and var = {varCont: varContT; varLoc: loc}
+and varContT =
 |VarIdent of string
 |VarPointer of var
 |VarReference of var
 
-and qvar = {qvarCont: qvarCont; qvarLoc: loc}
-and qvarCont =
+and qvar = {qvarCont: qvarContT; qvarLoc: loc}
+and qvarContT =
 |QvarQident of qident
 |QvarPointer of qvar
 |QvarReference of qvar
@@ -50,8 +50,8 @@ and qident =
 |Ident of string
 |IdentIdent of string * string
 
-and expr = {exprCont: exprCont; exprLoc: loc}
-and exprCont =
+and expr = {exprCont: exprContT; exprLoc: loc}
+and exprContT =
 |ExprInt of int
 |This
 |False
@@ -87,15 +87,15 @@ and opCont =
 |OpMinus
 |OpTimes
 |OpDivide
-|OpModulo (*Je crois*)
+|OpModulo
 |OpAnd
 |OpOr
 
-and ins = {insCont: insCont; insLoc: loc}
-and insCont =
+and ins = {insCont: insContT; insLoc: loc}
+and insContT =
 |InsSemicolon
 |InsExpr of expr
-|InsDef of typ * var * insDef option
+|InsDef of typ * var * (insDef option)
 |InsIf of expr * ins
 |InsIfElse of expr * ins * ins
 |InsWhile of expr * ins
@@ -104,11 +104,11 @@ and insCont =
 |InsCout of expr_str list
 |InsReturn of expr option
 and insDef =
-|InsDefExpr of expr * (expr list)
+|InsDefExpr of expr
 |InsDefIdent of string * (expr list)
 
 and expr_str =
 |ExprStrExpr of expr
 |ExprStrStr of string
 
-and bloc = {blocCont : ins list; blocLoc: loc}
+and bloc = {blocCont : (ins list); blocLoc: loc}
