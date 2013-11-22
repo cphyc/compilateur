@@ -20,9 +20,9 @@
   (* détermine si on a un identifieur ou un mot clé *)
   let id_or_kwd = 
     let h = Hashtbl.create 17 in
+    (* Remplissage de la table de hashage *)
     List.iter (fun (s,t) -> Hashtbl.add h s t) kwd_tbl;
-    fun s -> 
-      let s = String.lowercase s in (* la casse n'est pas significative *)
+    fun s -> (* on cherche s, sinon en renvoie juste l'identificateur *)
       try List.assoc s kwd_tbl with _ -> IDENT s
 
   (* va à la ligne suivante en incrémentant la référence de ligne *)
@@ -82,9 +82,9 @@ rule token = parse
   | '&'     { AMP }
   | ','     { COMMA }
   | ':'     { COLON }
+  | "::"    { DCOLON }
   | ";"     { SEMICOLON }
   | "/*"    { comment lexbuf }
-(* On a un "//", on va à la ligne suivante et on réévalue *)
   | "//"    { newline lexbuf; token lexbuf }
   | integer as s { CST (int_of_string s) }
   | eof     { raise (Lexing_error "reached end of file") }

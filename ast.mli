@@ -23,7 +23,8 @@ and proto = {protoVar: protoVarT; argumentList: argument list;
 
 and protoVarT =
 |Qvar of typ * qvar
-|Qident of qident
+|Tident of string
+|TidentTident of string * string
 
 and typ = {typCont: typContT; typLoc: loc}
 
