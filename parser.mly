@@ -58,9 +58,12 @@ decl_vars:
 
 decl_class: 
 | CLASS; i=TIDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
-   { {className= i; supersOpt=None; memberList=m; declClassLoc=$startpos, $endpos} }
-| CLASS; i=TIDENT; s0 = supers LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON; 
-   { {className= i; supersOpt= s0; memberList=m; declClassLoc=$startpos, $endpos} }
+   { {className= i; supersOpt=None; memberList=m; 
+      declClassLoc=$startpos, $endpos} }
+| CLASS; i=TIDENT; s0 = supers LBRACE; PUBLIC; COLON; m=member*; 
+  RBRACE; SEMICOLON; 
+   { {className= i; supersOpt= s0; memberList=m; 
+      declClassLoc=$startpos, $endpos} }
 ;
 
 supers:
@@ -84,8 +87,10 @@ proto:
 | t= TIDENT; LPAREN; args= separated_list(COMMA, argument); RPAREN 
    { {protoVar= Tident t; argumentList= args;
       protoLoc= $startpos, $endpos} }
-| t= TIDENT; DCOLON; tmem= TIDENT; args= separated_list(COMMA, argument); RPAREN 
-  { {protoVar= TidentTident (t, tmem); argumentList= args; protoLoc= $startpos, $endpos} }
+| t= TIDENT; DCOLON; tmem= TIDENT; 
+  args= separated_list(COMMA, argument); RPAREN 
+  { {protoVar= TidentTident (t, tmem); argumentList= args; 
+     protoLoc= $startpos, $endpos} }
 ;
 
 /* Déclarations de variables et identificateurs */
@@ -140,9 +145,12 @@ expr:
 | e= expr DMINUS { {exprCont= ExprRDecr e; exprLoc= $startpos, $endpos} }
 | AMP e= expr { {exprCont= ExprAmpersand e; exprLoc= $startpos, $endpos} }
 | EXCL e= expr { {exprCont= ExprExclamation e; exprLoc= $startpos, $endpos} }
-| STAR e= expr { {exprCont= ExprStar e; exprLoc= $startpos, $endpos} } %prec USTAR
-| MINUS e= expr { {exprCont= ExprMinus e; exprLoc= $startpos, $endpos} } %prec UMINUS
-| PLUS e= expr { {exprCont= ExprPlus e; exprLoc= $startpos, $endpos} } %prec UPLUS
+| STAR e= expr { {exprCont= ExprStar e; exprLoc= $startpos, $endpos} } 
+  %prec USTAR
+| MINUS e= expr { {exprCont= ExprMinus e; exprLoc= $startpos, $endpos} } 
+  %prec UMINUS
+| PLUS e= expr { {exprCont= ExprPlus e; exprLoc= $startpos, $endpos} } 
+  %prec UPLUS
     (*On distingue ici les opérateurs unaires.*)
 | e1= expr op= operator e2= expr
     { {exprCont= ExprOp(e1,op,e2); exprLoc= $startpos, $endpos} }
