@@ -1,10 +1,10 @@
 compilateur
 ===========
-Le test 
+Le test suivant retourne une erreur ...
 
 
     int m() {int a }
 
 
-retourne une erreur (ce qui n'est pas normal).
+
 
