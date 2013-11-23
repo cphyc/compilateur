@@ -34,7 +34,7 @@
 }
 
 let digit = ['0'-'9']
-let alpha = ['a'-'Z' 'a'-'Z']
+let alpha = ['a'-'z' 'a'-'Z']
 let ident = (alpha | '_') (alpha | '_' | digit)*
 let tident = (alpha | '_') (alpha | '_' | digit)*
 let octal_digit = ['0'-'7']
