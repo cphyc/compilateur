@@ -8,16 +8,22 @@
 %token <string> STRING
 %token IOSTREAM COUT
 %token CLASS ELSE FALSE FOR IF INT NEW NULL PUBLIC RETURN THIS TRUE VIRTUAL VOID
-%token WHILE ASSIGN OR AND EQ NEQ LT LE GT GE DLT PLUS DPLUS DMINUS MINUS STAR
+%token WHILE EQ OR AND DEQ NEQ LT LE GT GE DLT PLUS DPLUS DMINUS MINUS STAR
 %token DIV EXCL MOD LPAREN RPAREN LBRACE RBRACE DOT POINTER AMP COMMA
 %token DCOLON COLON SEMICOLON EOF
 
 /* Associativity, priority */
+%right EQ
 %left OR
-%left AND
-%nonassoc EXCL
-%left MINUS PLUS
-%left STAR DIV
+%left AND 
+%left DEQ NEQ
+%left PLUS MINUS
+%left LT LE GT GE
+%left STAR DIV MOD
+%right EXCL DPLUS DMINUS AMP UPLUS UMINUS USTAR
+%left LPAREN POINTER DOT
+%nonassoc THEN
+%nonassoc ELSE
 
 /* Entry point for grammary */
 %start file
@@ -116,11 +122,11 @@ expr:
 | TRUE { {exprCont = True; exprLoc= $startpos, $endpos} }
 | NULL { {exprCont = Null; exprLoc= $startpos, $endpos} }
 | q = qident { {exprCont = ExprQident q; exprLoc= $startpos, $endpos} }
-| STAR e = expr { {exprCont = ExprStar e; exprLoc= $startpos, $endpos} }
+| STAR e = expr {{exprCont = ExprStar e; exprLoc= $startpos, $endpos}} %prec USTAR
 | e = expr DOT i = IDENT { {exprCont=ExprDot (e,i); exprLoc= $startpos, $endpos} }
 | e = expr POINTER i = IDENT 
    { {exprCont = ExprArrow (e,i); exprLoc= $startpos, $endpos} }
-| e1 = expr ASSIGN e2 = expr 
+| e1 = expr EQ e2 = expr 
    { {exprCont = ExprEqual (e1,e2); exprLoc= $startpos, $endpos }}
 | e = expr LPAREN elist = separated_list(COMMA, expr) RPAREN
    { {exprCont = ExprApply (e,elist); exprLoc= $startpos, $endpos} }
@@ -132,16 +138,18 @@ expr:
 | e = expr DMINUS {{exprCont = ExprRDecr e; exprLoc= $startpos, $endpos}}
 | AMP e = expr {{exprCont = ExprAmpersand e; exprLoc= $startpos, $endpos}}
 | EXCL e = expr {{exprCont = ExprExclamation e; exprLoc= $startpos, $endpos}}
-| MINUS e = expr {{exprCont = ExprMinus e; exprLoc= $startpos, $endpos}}
-| PLUS e = expr {{exprCont = ExprPlus e; exprLoc= $startpos, $endpos}}
+| MINUS e = expr %prec UMINUS
+   {{exprCont = ExprMinus e; exprLoc= $startpos, $endpos}} 
+| PLUS e = expr %prec UPLUS
+   {{exprCont = ExprPlus e; exprLoc= $startpos, $endpos}} 
 | e1 = expr; op = operator; e2 = expr 
    {{exprCont = ExprOp(e1,op,e2); exprLoc= $startpos, $endpos}}
 | LPAREN e = expr RPAREN 
    {{exprCont = ExprParenthesis e; exprLoc= $startpos, $endpos}}
 ;
 
-operator:
-| EQ {{opCont= OpEqual; opLoc= $startpos, $endpos}}
+%inline operator:
+| DEQ {{opCont= OpEqual; opLoc= $startpos, $endpos}}
 | NEQ {{opCont= OpDiff; opLoc= $startpos, $endpos}}
 | LT {{opCont= OpLesser; opLoc= $startpos, $endpos}}
 | GT {{opCont= OpLesserEqual; opLoc= $startpos, $endpos}}
@@ -167,9 +175,9 @@ instruction:
    LPAREN elist = separated_list(COMMA, expr) RPAREN SEMICOLON 
    {{insCont = InsDef(t, v, Some (InsDefIdent (ti, elist)));
      insLoc= $startpos, $endpos}}
-| IF LPAREN e = expr RPAREN i = instruction 
+| IF LPAREN e = expr RPAREN i = instruction %prec THEN
    {{insCont = InsIf (e,i); insLoc = $startpos, $endpos}}
-| IF LPAREN e = expr RPAREN i1 = instruction ELSE i2 = instruction 
+| IF LPAREN e = expr RPAREN i1 = instruction ELSE i2 = instruction
    {{insCont = InsIfElse (e,i1,i2); insLoc= $startpos, $endpos}}
 | WHILE LPAREN e = expr RPAREN i = instruction 
    {{insCont = InsWhile (e,i); insLoc= $startpos, $endpos}}
