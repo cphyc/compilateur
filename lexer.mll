@@ -54,10 +54,10 @@ rule token = parse
   | "\n"    { newline lexbuf; token lexbuf }
   | space+  { token lexbuf }
   | ident as id { id_or_kwd id }
-  | '='     { ASSIGN }
+  | '='     { EQ }
   | "||"    { OR }
   | "&&"    { AND }
-  | "=="    { EQ }
+  | "=="    { DEQ }
   | "!="    { NEQ }
   | '<'     { LT }
   | "<="    { LE }
