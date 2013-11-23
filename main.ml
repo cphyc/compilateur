@@ -56,13 +56,15 @@ let () =
     if !parse_only then exit 0
 
   with
-  | Lexer.Lexing_error c -> 
+  | Lexer.Lexing_error c when c != "reached end of file" -> 
         (* Erreur lexicale. On récupère sa position absolue et 
            on la convertit en numéro de ligne *)
     localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));
-    eprintf "Erreur dans l'analyse lexicale: %s@." c;
+    eprintf "Erreur dans l'analyse lexicale: %s.@." c;
     exit 1
-  | Parser.Error -> 
+  | Lexer.Lexing_error _ -> 
+    exit 0
+  | Parser.Error-> 
       (* Erreur syntaxique. On récupère sa position absolue et on la 
          convertit en numéro de ligne *)
     localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));
