@@ -35,10 +35,10 @@
 
 /* Type général d'un fichier */
 file:
- |IOSTREAM; d= decl*;  EOF 
+ | IOSTREAM; d= decl*;  EOF 
     { {iostr= true; fichierDecl= d; 
       fichierLoc= $startpos, $endpos} } 
- |d= decl*;  EOF 
+ | d= decl*;  EOF 
     { {iostr= false; fichierDecl= d; 
       fichierLoc= $startpos, $endpos} } 
 ; 
@@ -51,26 +51,24 @@ decl:
 ;
 
 decl_vars:
-  t=typ; vlist=separated_list(COMMA, var) 
+  t=typ; vlist=separated_nonempty_list(COMMA, var) 
    { {declVarsTyp= t; varList= vlist; declVarsLoc= $startpos, $endpos} }
 
 ;
 
 decl_class: 
-|  CLASS; i=TIDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
+| CLASS; i=TIDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
    { {className= i; supersOpt=None; memberList=m; declClassLoc=$startpos, $endpos} }
-|  CLASS; i=TIDENT; s=separated_nonempty_list(COMMA, supers);
-   LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON;
-   {(*Petit soucis ici pour récupérer la listes des supers *)
-    {className= i; supersOpt=None; memberList=m; declClassLoc=$startpos, $endpos} }
+| CLASS; i=TIDENT; s0 = supers LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON; 
+   { {className= i; supersOpt= s0; memberList=m; declClassLoc=$startpos, $endpos} }
 ;
 
 supers:
-  COLON; slist= separated_nonempty_list(COMMA, pubtident); { slist }
+  COLON; slist= separated_nonempty_list(COMMA, pubtident); { Some slist } 
 ;
 
 %inline pubtident:
-  PUBLIC; t= TIDENT; {t}
+  PUBLIC; t= TIDENT; { t }
 ;
 
 member:
@@ -143,8 +141,8 @@ expr:
 | AMP e= expr { {exprCont= ExprAmpersand e; exprLoc= $startpos, $endpos} }
 | EXCL e= expr { {exprCont= ExprExclamation e; exprLoc= $startpos, $endpos} }
 | STAR e= expr { {exprCont= ExprStar e; exprLoc= $startpos, $endpos} } %prec USTAR
-| MINUS e= expr { {exprCont= ExprMinus e; exprLoc= $startpos, $endpos} } %prec UMINUS 
-| PLUS e= expr { {exprCont= ExprPlus e; exprLoc= $startpos, $endpos} } %prec UPLUS 
+| MINUS e= expr { {exprCont= ExprMinus e; exprLoc= $startpos, $endpos} } %prec UMINUS
+| PLUS e= expr { {exprCont= ExprPlus e; exprLoc= $startpos, $endpos} } %prec UPLUS
     (*On distingue ici les opérateurs unaires.*)
 | e1= expr op= operator e2= expr
     { {exprCont= ExprOp(e1,op,e2); exprLoc= $startpos, $endpos} }
@@ -171,7 +169,7 @@ expr:
 /* Définition d'une instruction */
 instruction: 
 | SEMICOLON { {insCont= InsSemicolon; insLoc= $startpos, $endpos} }
-| e= expr { {insCont= InsExpr e; insLoc= $startpos, $endpos} }
+| e= expr { {insCont= InsExpr e; insLoc= $startpos, $endpos} } %prec STAR
 | t= typ; v= var 
    { {insCont= InsDef (t, v, None); insLoc= $startpos, $endpos} }
 | t= typ; v= var; EQ; e= expr SEMICOLON 
@@ -191,7 +189,7 @@ instruction:
    { {insCont= InsFor (elist1, e2, elist3, i); insLoc= $startpos, $endpos} }
 | b= bloc { {insCont= InsBloc b; insLoc= $startpos, $endpos} }
 | COUT elist= separated_nonempty_list(DLT, expr_str) SEMICOLON 
-   { {insCont= InsCout elist; insLoc= $startpos, $endpos} }
+   { {insCont= InsCout (elist); insLoc= $startpos, $endpos} }
 | RETURN e= expr? SEMICOLON 
    { {insCont= InsReturn e; insLoc= $startpos, $endpos} }
 ;
