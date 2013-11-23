@@ -21,7 +21,7 @@ $(BIN):$(CMO)
 	ocamllex $<
 
 .mly.ml:
-	menhir -v $<
+	menhir -v --infer $<
 
 .mly.mli:
 	ocamlyacc -v $<
