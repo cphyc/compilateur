@@ -87,7 +87,7 @@ rule token = parse
   | "/*"    { comment lexbuf }
   | "//"    { newline lexbuf; token lexbuf }
   | integer as s { CST (int_of_string s) }
-  | eof     { raise (Lexing_error "reached end of file") }
+  | eof     { EOF }
   | _ as c  { raise (Lexing_error ("illegal character: " ^ String.make 1 c)) }
 
 and comment = parse
