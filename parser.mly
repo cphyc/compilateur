@@ -106,7 +106,7 @@ argument:
 ;
 
 var:
-| i= TIDENT { {varCont= VarIdent i; varLoc= $startpos, $endpos} }
+| i= IDENT { {varCont= VarIdent i; varLoc= $startpos, $endpos} }
 | STAR v= var { {varCont= VarPointer v; varLoc= $startpos, $endpos} }
 | AMP v= var { {varCont= VarReference v; varLoc= $startpos, $endpos} }
 ;
