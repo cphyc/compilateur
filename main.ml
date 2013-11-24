@@ -44,6 +44,7 @@ let () =
     Arg.usage options usage;
     exit 1
   end;
+<<<<<<< HEAD
   
   while true do
     (* Ouverture du fichier source en lecture *)
@@ -62,6 +63,22 @@ let () =
     |Hack.New_ident s -> Lexer.add s;
       
     |Lexer.Lexing_error c when c != "reached end of file" -> 
+=======
+
+  (* Ouverture du fichier source en lecture *)
+  let f = open_in !ifile in
+ 
+  (* Création d'un tampon d'analyse lexicale *)
+  let buf = Lexing.from_channel f in
+
+  try
+    let p = Parser.file Lexer.token buf in
+    close_in f;
+    if !parse_only then exit 0
+
+  with
+  | Lexer.Lexing_error c when c != "reached end of file" -> 
+>>>>>>> 8f842588067c3b0128e1c94a2afcae19b823ef6d
         (* Erreur lexicale. On récupère sa position absolue et 
            on la convertit en numéro de ligne *)
     localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));

@@ -1,7 +1,7 @@
 type loc = Lexing.position * Lexing.position
 
 type fichier = {iostr: bool; fichierDecl: decl list; fichierLoc: loc}
-  
+
 and decl = 
 |DeclVars of declVars
 |DeclClass of declClass
