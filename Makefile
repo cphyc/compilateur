@@ -32,7 +32,8 @@ parser.ml parser.mli: parser.mly
 	$(PARSER) $(PARSER-OPTS) --base parser --external-tokens Tokens -v tokens.mly parser.mly
 
 clean:
-	rm -f *.cm[io] *.o *~ *.annot *.automaton .depend sortie_test $(BIN) $(GENERATED) parser.output
+	@echo "Removing unwanted files from the workspace ..."
+	@rm -f *.cm[io] *.o *~ *.annot *.automaton .depend sortie_test $(BIN) $(GENERATED) parser.output
 
 .depend depend:$(GENERATED)
 	rm -f .depend
