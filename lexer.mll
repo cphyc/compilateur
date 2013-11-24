@@ -6,6 +6,7 @@
    
   exception Lexing_error of string
 
+  let tid_tbl = ["a", TIDENT a]
   (* tables des mots-clés *)
   let kwd_tbl = 
     [
@@ -16,14 +17,16 @@
       "void", VOID; "while", WHILE
     ]
   
-  (* TODO: vérifier qu'on n'a pas un nom de classe dynamique *)
   (* détermine si on a un identifieur ou un mot clé *)
-  let id_or_kwd = 
+  let id_or_kwd_or_tid = 
     let h = Hashtbl.create 17 in
     (* Remplissage de la table de hashage *)
     List.iter (fun (s,t) -> Hashtbl.add h s t) kwd_tbl;
     fun s -> (* on cherche s, sinon en renvoie juste l'identificateur *)
-      try List.assoc s kwd_tbl with _ -> IDENT s
+      try 
+	List.assoc s kwd_tbl;
+	List.assoc s tid_tbl;
+      with _ -> IDENT s
 
   (* va à la ligne suivante en incrémentant la référence de ligne *)
   let newline lexbuf =
@@ -53,8 +56,8 @@ rule token = parse
   | "std::cout" { COUT }
   | "\n"    { newline lexbuf; token lexbuf }
   | space+  { token lexbuf }
-  | string as s {STRING (String.sub s 1 (String.length s - 1))}
-  | ident as id { id_or_kwd id }
+  | string as s { STRING (String.sub s 1 (String.length s - 1))}
+  | ident as id { id_or_kwd_or_tid id }
   | '='     { EQ }
   | "||"    { OR }
   | "&&"    { AND }

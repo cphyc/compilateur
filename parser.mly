@@ -1,5 +1,5 @@
 %{
-  open Ast
+open Ast
 %}
 
 %token <int> CST
@@ -59,7 +59,9 @@ decl_vars:
 decl_class: 
 | CLASS; i=IDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
    { {className= i; supersOpt=None; memberList=m; 
-      declClassLoc=$startpos, $endpos} }
+      declClassLoc=$startpos, $endpos}
+      
+   }
 | CLASS; i=IDENT; s0 = supers LBRACE; PUBLIC; COLON; m=member*; 
   RBRACE; SEMICOLON; 
    { {className= i; supersOpt= s0; memberList=m; 
