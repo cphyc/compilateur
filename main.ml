@@ -52,7 +52,6 @@ let () =
   try
     let p = Parser.file Lexer.token buf in
     close_in f;
-    
     if !parse_only then exit 0
 
   with
