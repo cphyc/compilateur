@@ -1,4 +1,5 @@
 %{
+  open Format
   open Ast
   open Tokens
 %}
@@ -9,12 +10,13 @@
 /* Type retourné par le lexer */
 %type <Ast.fichier> file
 
-%parameter<Hack: sig
-  exception New_ident of string
+%parameter<Lexer: sig
+  exception Lexing_error of string
+  val find_tident : string -> bool
+  val add_tident : string -> unit
 end>
-
 %{
-  open Hack
+  open Lexer
 %}
 %%
 
@@ -42,18 +44,38 @@ decl_vars:
 ;
 
 decl_class: 
-| CLASS; i=IDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
-  {raise (New_ident i)}
-| CLASS; i=TIDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
-    {{className= i; supersOpt=None; memberList=m; 
+| CLASS; i= IDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
+  { 
+    match find_tident i with
+    | true -> 
+      printf "Trouve.\n"; raise (Lexing_error i)
+    | false ->
+      printf "Pas trouve.\n";
+      begin
+	add_tident i;
+	{ className= i; supersOpt=None; memberList=m; 
+	  declClassLoc=$startpos, $endpos}
+      end
+  }
+| CLASS; i= TIDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
+  { {className= i; supersOpt=None; memberList=m; 
      declClassLoc=$startpos, $endpos} }
-| CLASS; i=IDENT; s0 = supers LBRACE; PUBLIC; COLON; m=member*; 
+| CLASS; i= IDENT; s0= supers LBRACE; PUBLIC; COLON; m=member*; 
   RBRACE; SEMICOLON; 
-   {raise (New_ident i)}
-| CLASS; i=TIDENT; s0 = supers LBRACE; PUBLIC; COLON; m=member*; 
+  { 
+    match find_tident i with
+    | true -> raise (Lexing_error i)
+    | false ->
+      begin
+	add_tident i;
+	{ className= i; supersOpt= s0; memberList= m; 
+	  declClassLoc= $startpos, $endpos}
+      end
+  }
+| CLASS; i= TIDENT; s0= supers LBRACE; PUBLIC; COLON; m= member*; 
   RBRACE; SEMICOLON; 
-   {{className= i; supersOpt= s0; memberList=m; 
-      declClassLoc=$startpos, $endpos} }
+   { {className= i; supersOpt= s0; memberList= m; 
+      declClassLoc= $startpos, $endpos} }
 ;
 
 supers:

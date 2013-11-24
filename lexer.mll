@@ -16,12 +16,15 @@
 	"this", THIS; "true", TRUE; "virtual", VIRTUAL;
 	"void", VOID; "while", WHILE
       ]
-      
-  let add s = Hashtbl.add kwd_tbl s (TIDENT s)
+  
+  (* Cherche un identificateur dynamiquement *)
+  let find_tident s = Hashtbl.mem kwd_tbl s
+  
+  (* Ajoute un TIDENT *)
+  let add_tident s = Hashtbl.add kwd_tbl s (TIDENT s)
       
   let id_or_kwd s = try Hashtbl.find kwd_tbl s with 
       Not_found -> IDENT s
-	
 
   (* va à la ligne suivante en incrémentant la référence de ligne *)
   let newline lexbuf =
@@ -34,7 +37,6 @@
 let digit = ['0'-'9']
 let alpha = ['a'-'z' 'A'-'Z']
 let ident = (alpha | '_') (alpha | '_' | digit)*
-let tident = (alpha | '_') (alpha | '_' | digit)*
 let octal_digit = ['0'-'7']
 let hexa_digit = ['0'-'9' 'a'-'f' 'A'-'F']
 let integer = '0' | ['1'-'9'] digit* | '0' octal_digit+ | "0x" hexa_digit+
@@ -51,7 +53,7 @@ rule token = parse
   | "std::cout" { COUT }
   | "\n"    { newline lexbuf; token lexbuf }
   | space+  { token lexbuf }
-  | string as s {STRING (String.sub s 1 (String.length s - 1))}
+  | string as s { STRING (String.sub s 1 (String.length s - 1)) }
   | ident as id { id_or_kwd id }
   | '='     { EQ }
   | "||"    { OR }
@@ -63,7 +65,6 @@ rule token = parse
   | '>'     { GT }
   | ">="    { GE }
   | "<<"    { DLT }
-(* Il faut intégrer le support des opérateurs unaires '+', '-' et '*' *)
   | '+'     { PLUS }
   | '-'     { MINUS }
   | '*'     { STAR }
