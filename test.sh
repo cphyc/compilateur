@@ -4,7 +4,9 @@ echo "###############################"
 echo "-parse-only sur docs/tests/syntax/bad/*"
 for file in docs/tests/syntax/bad/*.cpp
 do
-./minic++ -parse-only $file
+    echo "Devrait produire une erreur :" $file
+    ./minic++ -parse-only $file
+    echo
 done
 
 echo
@@ -12,5 +14,6 @@ echo "###############################"
 echo " -parse-only sur le reste"
 for file in docs/tests/syntax/good/*.cpp 
 do
-./minic++ -parse-only $file
+    echo "Ne devrait pas produire d'erreur :" $file
+    ./minic++ -parse-only $file
 done
