@@ -1,10 +1,6 @@
 %{
-<<<<<<< HEAD
   open Ast
   open Tokens
-=======
-open Ast
->>>>>>> 8f842588067c3b0128e1c94a2afcae19b823ef6d
 %}
 
 /* Point d'entrée de la grammaire */
