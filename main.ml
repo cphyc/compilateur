@@ -62,38 +62,23 @@ let () =
     |Hack.New_ident s -> Lexer.add s;
       
     |Lexer.Lexing_error c when c != "reached end of file" -> 
-=======
-
-  (* Ouverture du fichier source en lecture *)
-  let f = open_in !ifile in
- 
-  (* Création d'un tampon d'analyse lexicale *)
-  let buf = Lexing.from_channel f in
-
-  try
-    let p = Parser.file Lexer.token buf in
-    close_in f;
-    if !parse_only then exit 0
-
-  with
-  | Lexer.Lexing_error c when c != "reached end of file" -> 
         (* Erreur lexicale. On récupère sa position absolue et 
            on la convertit en numéro de ligne *)
-    localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));
-    eprintf "Erreur dans l'analyse lexicale: %s.@." c;
-    exit 1
-  | Lexer.Lexing_error _ -> 
-    eprintf "Gneuh ?";
-    exit 1
-  | HackingParser.Error-> 
-      (* Erreur syntaxique. On récupère sa position absolue et on la 
-         convertit en numéro de ligne *)
-    localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));
-    eprintf "Erreur dans l'analyse syntaxique@.";
-    exit 1
+      localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));
+      eprintf "Erreur dans l'analyse lexicale: %s.@." c;
+      exit 1
+    | Lexer.Lexing_error _ -> 
+      eprintf "Gneuh ?";
+      exit 1
+    | HackingParser.Error-> 
+    (* Erreur syntaxique. On récupère sa position absolue et on la 
+       convertit en numéro de ligne *)
+      localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));
+      eprintf "Erreur dans l'analyse syntaxique@.";
+      exit 1
   (*| Interp.Error s-> 
-      (* Erreur pendant l'interprétation *)
+    (* Erreur pendant l'interprétation *)
     eprintf "Erreur : %s@." s;
     exit 1*)
-
+	
   done

@@ -47,10 +47,6 @@ decl_class:
 | CLASS; i=TIDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
     {{className= i; supersOpt=None; memberList=m; 
      declClassLoc=$startpos, $endpos} }
-   { {className= i; supersOpt=None; memberList=m; 
-      declClassLoc=$startpos, $endpos}
-      
-   }
 | CLASS; i=IDENT; s0 = supers LBRACE; PUBLIC; COLON; m=member*; 
   RBRACE; SEMICOLON; 
    {raise (New_ident i)}
