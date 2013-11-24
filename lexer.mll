@@ -53,6 +53,7 @@ rule token = parse
   | "std::cout" { COUT }
   | "\n"    { newline lexbuf; token lexbuf }
   | space+  { token lexbuf }
+  | string as s {STRING (String.sub s 1 (String.length s - 1))}
   | ident as id { id_or_kwd id }
   | '='     { EQ }
   | "||"    { OR }

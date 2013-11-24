@@ -196,7 +196,7 @@ instruction:
    SEMICOLON elist3= separated_list(COMMA, expr) RPAREN i= instruction 
    { {insCont= InsFor (elist1, e2, elist3, i); insLoc= $startpos, $endpos} }
 | b= bloc { {insCont= InsBloc b; insLoc= $startpos, $endpos} }
-| COUT elist= separated_nonempty_list(DLT, expr_str) SEMICOLON 
+| COUT elist= preceded(DLT, separated_nonempty_list(DLT, expr_str)) SEMICOLON 
    { {insCont= InsCout (elist); insLoc= $startpos, $endpos} }
 | RETURN e= expr? SEMICOLON 
    { {insCont= InsReturn e; insLoc= $startpos, $endpos} }
