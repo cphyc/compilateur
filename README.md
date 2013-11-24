@@ -24,4 +24,4 @@ Ce qui ne marche / ne marche pas
 * [x] instruction  (if nécessite des {} autour de la première instruction ...)
 * [x] expr_str		
 * [x] bloc				
-
+* [ ] lexer hack
