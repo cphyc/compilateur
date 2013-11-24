@@ -7,23 +7,23 @@
   exception Lexing_error of string
 
   (* tables des mots-clés *)
-  let kwd_tbl = 
-    [
-      "class", CLASS; "else", ELSE; "false", FALSE;
-      "for", FOR; "if", IF; "int", INT; "new", NEW;
-      "NULL", NULL; "public", PUBLIC; "return", RETURN;
-      "this", THIS; "true", TRUE; "virtual", VIRTUAL;
-      "void", VOID; "while", WHILE
-    ]
-  
-  (* TODO: vérifier qu'on n'a pas un nom de classe dynamique *)
+  let kwd_tbl = Hashtbl.create 17
+    
+  let _ =
+    List.iter (fun (s,t) -> Hashtbl.add kwd_tbl s t)
+      [
+	"class", CLASS; "else", ELSE; "false", FALSE;
+	"for", FOR; "if", IF; "int", INT; "new", NEW;
+	"NULL", NULL; "public", PUBLIC; "return", RETURN;
+	"this", THIS; "true", TRUE; "virtual", VIRTUAL;
+	"void", VOID; "while", WHILE
+      ]
+      
+
   (* détermine si on a un identifieur ou un mot clé *)
-  let id_or_kwd = 
-    let h = Hashtbl.create 17 in
-    (* Remplissage de la table de hashage *)
-    List.iter (fun (s,t) -> Hashtbl.add h s t) kwd_tbl;
-    fun s -> (* on cherche s, sinon en renvoie juste l'identificateur *)
-      try List.assoc s kwd_tbl with _ -> IDENT s
+  let id_or_kwd s = 
+      try Hashtbl.find kwd_tbl s with 
+	Not_found -> IDENT s
 
   (* va à la ligne suivante en incrémentant la référence de ligne *)
   let newline lexbuf =
