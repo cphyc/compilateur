@@ -51,16 +51,16 @@ decl:
 ;
 
 decl_vars:
-  t=typ; vlist=separated_nonempty_list(COMMA, var) 
+  t= typ; vlist= separated_nonempty_list(COMMA, var) SEMICOLON
    { {declVarsTyp= t; varList= vlist; declVarsLoc= $startpos, $endpos} }
 
 ;
 
 decl_class: 
-| CLASS; i=TIDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
+| CLASS; i=IDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
    { {className= i; supersOpt=None; memberList=m; 
       declClassLoc=$startpos, $endpos} }
-| CLASS; i=TIDENT; s0 = supers LBRACE; PUBLIC; COLON; m=member*; 
+| CLASS; i=IDENT; s0 = supers LBRACE; PUBLIC; COLON; m=member*; 
   RBRACE; SEMICOLON; 
    { {className= i; supersOpt= s0; memberList=m; 
       declClassLoc=$startpos, $endpos} }
