@@ -43,17 +43,14 @@ decl_vars:
 
 decl_class: 
 | CLASS; i=IDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
-<<<<<<< HEAD
   {raise (New_ident i)}
 | CLASS; i=TIDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
     {{className= i; supersOpt=None; memberList=m; 
      declClassLoc=$startpos, $endpos} }
-=======
    { {className= i; supersOpt=None; memberList=m; 
       declClassLoc=$startpos, $endpos}
       
    }
->>>>>>> 8f842588067c3b0128e1c94a2afcae19b823ef6d
 | CLASS; i=IDENT; s0 = supers LBRACE; PUBLIC; COLON; m=member*; 
   RBRACE; SEMICOLON; 
    {raise (New_ident i)}
