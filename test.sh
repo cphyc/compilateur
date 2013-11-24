@@ -12,7 +12,7 @@ done
 echo
 echo "###############################"
 echo " -parse-only sur le reste"
-for file in docs/tests/syntax/good/*.cpp 
+for file in docs/tests/syntax/good/*.cpp docs/tests/typing/*/*.cpp docs/tests/exec/*.cpp
 do
     echo "Ne devrait pas produire d'erreur :" $file
     ./minic++ -parse-only $file

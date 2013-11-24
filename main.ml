@@ -2,6 +2,8 @@
 
 open Format
 
+module HackingParser = Parser.Make(Hack)
+
 (* Option de compilation, pour s'arrêter à l'issue du parser *)
 let parse_only = ref false
 
@@ -42,29 +44,33 @@ let () =
     Arg.usage options usage;
     exit 1
   end;
-
-  (* Ouverture du fichier source en lecture *)
-  let f = open_in !ifile in
- 
-  (* Création d'un tampon d'analyse lexicale *)
-  let buf = Lexing.from_channel f in
-
-  try
-    let p = Parser.file Lexer.token buf in
-    close_in f;
+  
+  while true do
+    (* Ouverture du fichier source en lecture *)
+    let f = open_in !ifile in
     
-    if !parse_only then exit 0
-
-  with
-  | Lexer.Lexing_error c when c != "reached end of file" -> 
+    (* Création d'un tampon d'analyse lexicale *)
+    let buf = Lexing.from_channel f in
+    
+    try
+      let _ = HackingParser.file Lexer.token buf in
+      
+      close_in f;
+      (* if !parse_only then *) exit 0
+	
+    with 
+    |Hack.New_ident s -> Lexer.add s;
+      
+    |Lexer.Lexing_error c when c != "reached end of file" -> 
         (* Erreur lexicale. On récupère sa position absolue et 
            on la convertit en numéro de ligne *)
     localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));
     eprintf "Erreur dans l'analyse lexicale: %s.@." c;
     exit 1
   | Lexer.Lexing_error _ -> 
-    exit 0
-  | Parser.Error-> 
+    eprintf "Gneuh ?";
+    exit 1
+  | HackingParser.Error-> 
       (* Erreur syntaxique. On récupère sa position absolue et on la 
          convertit en numéro de ligne *)
     localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));
@@ -74,3 +80,5 @@ let () =
       (* Erreur pendant l'interprétation *)
     eprintf "Erreur : %s@." s;
     exit 1*)
+
+  done

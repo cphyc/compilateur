@@ -1,0 +1,24 @@
+%token <int> CST
+%token <string> IDENT
+%token <string> TIDENT
+%token <string> STRING
+%token IOSTREAM COUT
+%token CLASS ELSE FALSE FOR IF INT NEW NULL PUBLIC RETURN THIS TRUE VIRTUAL VOID
+%token WHILE EQ OR AND DEQ NEQ LT LE GT GE DLT PLUS DPLUS DMINUS MINUS STAR
+%token DIV EXCL MOD LPAREN RPAREN LBRACE RBRACE DOT POINTER AMP COMMA
+%token DCOLON COLON SEMICOLON EOF
+
+/* Associativité */
+%right EQ
+%left OR
+%left AND 
+%left DEQ NEQ
+%left PLUS MINUS
+%left LT LE GT GE
+%left STAR DIV MOD
+%right EXCL DPLUS DMINUS AMP UPLUS UMINUS USTAR
+%left LPAREN POINTER DOT
+/* Non associatif pour régler les conflits */
+%nonassoc THEN
+%nonassoc ELSE
+%%

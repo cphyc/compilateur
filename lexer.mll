@@ -2,14 +2,12 @@
 
 {
   open Lexing
-  open Parser
-   
+  open Tokens
+
   exception Lexing_error of string
 
-  (* tables des mots-clés *)
   let kwd_tbl = Hashtbl.create 17
-    
-  let _ =
+  let () =
     List.iter (fun (s,t) -> Hashtbl.add kwd_tbl s t)
       [
 	"class", CLASS; "else", ELSE; "false", FALSE;
@@ -19,11 +17,11 @@
 	"void", VOID; "while", WHILE
       ]
       
-
-  (* détermine si on a un identifieur ou un mot clé *)
-  let id_or_kwd s = 
-      try Hashtbl.find kwd_tbl s with 
-	Not_found -> IDENT s
+  let add s = Hashtbl.add kwd_tbl s (TIDENT s)
+      
+  let id_or_kwd s = try Hashtbl.find kwd_tbl s with 
+      Not_found -> IDENT s
+	
 
   (* va à la ligne suivante en incrémentant la référence de ligne *)
   let newline lexbuf =

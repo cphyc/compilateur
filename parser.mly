@@ -1,36 +1,21 @@
 %{
   open Ast
+  open Tokens
 %}
-
-%token <int> CST
-%token <string> IDENT
-%token <string> TIDENT
-%token <string> STRING
-%token IOSTREAM COUT
-%token CLASS ELSE FALSE FOR IF INT NEW NULL PUBLIC RETURN THIS TRUE VIRTUAL VOID
-%token WHILE EQ OR AND DEQ NEQ LT LE GT GE DLT PLUS DPLUS DMINUS MINUS STAR
-%token DIV EXCL MOD LPAREN RPAREN LBRACE RBRACE DOT POINTER AMP COMMA
-%token DCOLON COLON SEMICOLON EOF
-
-/* Associativité */
-%right EQ
-%left OR
-%left AND 
-%left DEQ NEQ
-%left PLUS MINUS
-%left LT LE GT GE
-%left STAR DIV MOD
-%right EXCL DPLUS DMINUS AMP UPLUS UMINUS USTAR
-%left LPAREN POINTER DOT
-/* Non associatif pour régler les conflits */
-%nonassoc THEN
-%nonassoc ELSE
 
 /* Point d'entrée de la grammaire */
 %start file
 
 /* Type retourné par le lexer */
 %type <Ast.fichier> file
+
+%parameter<Hack: sig
+  exception New_ident of string
+end>
+
+%{
+  open Hack
+%}
 %%
 
 /* Type général d'un fichier */
@@ -58,11 +43,16 @@ decl_vars:
 
 decl_class: 
 | CLASS; i=IDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
-   { {className= i; supersOpt=None; memberList=m; 
-      declClassLoc=$startpos, $endpos} }
+  {raise (New_ident i)}
+| CLASS; i=TIDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
+    {{className= i; supersOpt=None; memberList=m; 
+     declClassLoc=$startpos, $endpos} }
 | CLASS; i=IDENT; s0 = supers LBRACE; PUBLIC; COLON; m=member*; 
   RBRACE; SEMICOLON; 
-   { {className= i; supersOpt= s0; memberList=m; 
+   {raise (New_ident i)}
+| CLASS; i=TIDENT; s0 = supers LBRACE; PUBLIC; COLON; m=member*; 
+  RBRACE; SEMICOLON; 
+   {{className= i; supersOpt= s0; memberList=m; 
       declClassLoc=$startpos, $endpos} }
 ;
 
@@ -177,7 +167,7 @@ expr:
 /* Définition d'une instruction */
 instruction: 
 | SEMICOLON { {insCont= InsSemicolon; insLoc= $startpos, $endpos} }
-| e= expr { {insCont= InsExpr e; insLoc= $startpos, $endpos} } %prec STAR
+| e= expr SEMICOLON { {insCont= InsExpr e; insLoc= $startpos, $endpos} } 
 | t= typ; v= var 
    { {insCont= InsDef (t, v, None); insLoc= $startpos, $endpos} }
 | t= typ; v= var; EQ; e= expr SEMICOLON 
