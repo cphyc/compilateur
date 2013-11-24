@@ -8,20 +8,20 @@ Le test suivant retourne une erreur ...
 
 Ce qui ne marche / ne marche pas 
 ==========
-* iostream		x
-* decl_vars		x
-* decl_class	
-* supers : ne marchent pas (logique, il manque le lexer hack pour les TIDENT)
-* member 			x
-* proto				x (vérifier les TIDENT)
-* type				x (vérifier les TIDENT)
-* argument		x	(vérifier les TIDENT)
-* var					x 
-* qvar				x (vérifier les TIDENT)
-* qident			x (...)
-* expr				x
-* operateur		x
-* instruction x (if nécessite des {} autour de la première instruction ...)
-* expr_str		x
-* bloc				x
+* [x] iostream		
+* [x] decl_vars		
+* [x] decl_class	
+* [ ] supers : ne marchent pas (logique, il manque le lexer hack pour les TIDENT)
+* [x] member 		
+* [x] proto				 (vérifier les TIDENT)
+* [x] type				 (vérifier les TIDENT)
+* [x] argument			(vérifier les TIDENT)
+* [x] var					 
+* [x] qvar				 (vérifier les TIDENT)
+* [x] qident			 (...)
+* [x] expr				
+* [x] operateur		
+* [x] instruction  (if nécessite des {} autour de la première instruction ...)
+* [x] expr_str		
+* [x] bloc				
 
