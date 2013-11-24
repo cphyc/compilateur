@@ -44,7 +44,6 @@ let () =
     Arg.usage options usage;
     exit 1
   end;
-<<<<<<< HEAD
   
   while true do
     (* Ouverture du fichier source en lecture *)
@@ -78,7 +77,6 @@ let () =
 
   with
   | Lexer.Lexing_error c when c != "reached end of file" -> 
->>>>>>> 8f842588067c3b0128e1c94a2afcae19b823ef6d
         (* Erreur lexicale. On récupère sa position absolue et 
            on la convertit en numéro de ligne *)
     localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));
