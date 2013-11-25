@@ -10,13 +10,13 @@
 /* Type retourné par le lexer */
 %type <Ast.fichier> file
 
-%parameter<Lexer: sig
+%parameter<Lex: sig
   exception Lexing_error of string
   val find_tident : string -> bool
   val add_tident : string -> unit
+  val print_everything : unit -> unit
 end>
 %{
-  open Lexer
 %}
 %%
 
@@ -46,15 +46,19 @@ decl_vars:
 decl_class: 
 | CLASS; i= IDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
   { 
-    match find_tident i with
+    match Lex.find_tident i with
     | true -> 
-      printf "Trouve.\n"; raise (Lexing_error i)
+      raise (Lex.Lexing_error i)
     | false ->
-      printf "Pas trouve.\n";
       begin
-	add_tident i;
+	Lex.print_everything () ;
+	Format.printf "Caca\n";
+	Lex.add_tident i;
+	Format.printf "Caca2\n";
+	Lex.print_everything ();
+	Format.printf "Caca3\n";
 	{ className= i; supersOpt=None; memberList=m; 
-	  declClassLoc=$startpos, $endpos}
+	  declClassLoc=$startpos, $endpos};
       end
   }
 | CLASS; i= TIDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
@@ -63,11 +67,11 @@ decl_class:
 | CLASS; i= IDENT; s0= supers LBRACE; PUBLIC; COLON; m=member*; 
   RBRACE; SEMICOLON; 
   { 
-    match find_tident i with
-    | true -> raise (Lexing_error i)
+    match Lex.find_tident i with
+    | true -> raise (Lex.Lexing_error i)
     | false ->
       begin
-	add_tident i;
+	Lex.add_tident i;
 	{ className= i; supersOpt= s0; memberList= m; 
 	  declClassLoc= $startpos, $endpos}
       end

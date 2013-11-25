@@ -19,9 +19,14 @@
   
   (* Cherche un identificateur dynamiquement *)
   let find_tident s = Hashtbl.mem kwd_tbl s
-  
-  (* Ajoute un TIDENT *)
-  let add_tident s = Hashtbl.add kwd_tbl s (TIDENT s)
+      
+  let print_everything () =
+    Format.printf "Pipi0 \n";
+    Hashtbl.iter (fun a -> fun b -> (Format.printf "%s @." a)) kwd_tbl;
+    Format.printf "Pipi1 \n"
+    
+
+  let add_tident s = Hashtbl.add kwd_tbl s (TIDENT s) 
       
   let id_or_kwd s = try Hashtbl.find kwd_tbl s with 
       Not_found -> IDENT s
@@ -31,7 +36,6 @@
     let pos = lexbuf.lex_curr_p in
     lexbuf.lex_curr_p <- 
       { pos with pos_lnum = pos.pos_lnum + 1; pos_bol = pos.pos_cnum }
-
 }
 
 let digit = ['0'-'9']
