@@ -45,41 +45,22 @@ decl_vars:
 
 decl_class: 
 | CLASS; i= IDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
-  { 
-    match Lex.find_tident i with
-    | true -> 
-      raise (Lex.Lexing_error i)
-    | false ->
-      begin
-	Lex.print_everything () ;
-	Format.printf "Caca\n";
-	Lex.add_tident i;
-	Format.printf "Caca2\n";
-	Lex.print_everything ();
-	Format.printf "Caca3\n";
-	{ className= i; supersOpt=None; memberList=m; 
-	  declClassLoc=$startpos, $endpos};
-      end
+  { (* Le code commenté ne sert à rien : si on a un ident, c'est pas un tident
+    donc pas la peine de vérifier*)
+    (*match Lex.find_tident i with
+    | true -> raise (Lex.Lexing_error i)
+    | false ->*)
+      Lex.add_tident i;
+      { className= i; supersOpt=None; memberList=m; 
+      declClassLoc=$startpos, $endpos};
   }
-| CLASS; i= TIDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
-  { {className= i; supersOpt=None; memberList=m; 
-     declClassLoc=$startpos, $endpos} }
 | CLASS; i= IDENT; s0= supers LBRACE; PUBLIC; COLON; m=member*; 
   RBRACE; SEMICOLON; 
   { 
-    match Lex.find_tident i with
-    | true -> raise (Lex.Lexing_error i)
-    | false ->
-      begin
-	Lex.add_tident i;
-	{ className= i; supersOpt= s0; memberList= m; 
-	  declClassLoc= $startpos, $endpos}
-      end
+    Lex.add_tident i;
+    { className= i; supersOpt= s0; memberList= m; 
+      declClassLoc= $startpos, $endpos}
   }
-| CLASS; i= TIDENT; s0= supers LBRACE; PUBLIC; COLON; m= member*; 
-  RBRACE; SEMICOLON; 
-   { {className= i; supersOpt= s0; memberList= m; 
-      declClassLoc= $startpos, $endpos} }
 ;
 
 supers:
