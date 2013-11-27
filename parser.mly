@@ -44,25 +44,19 @@ decl_vars:
 ;
 
 decl_class: 
-| CLASS; i= IDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
-  { (* Le code commenté ne sert à rien : si on a un ident, c'est pas un tident
-    donc pas la peine de vérifier*)
-    (*match Lex.find_tident i with
-    | true -> raise (Lex.Lexing_error i)
-    | false ->*)
-      Lex.add_tident i;
-      { className= i; supersOpt=None; memberList=m; 
-      declClassLoc=$startpos, $endpos};
-  }
-| CLASS; i= IDENT; s0= supers LBRACE; PUBLIC; COLON; m=member*; 
-  RBRACE; SEMICOLON; 
-  { 
-    Lex.add_tident i;
-    { className= i; supersOpt= s0; memberList= m; 
-      declClassLoc= $startpos, $endpos}
-  }
+| CLASS; i= decl_class_ident; LBRACE; PUBLIC; COLON; m=member*; 
+RBRACE; SEMICOLON
+  { { className= i; supersOpt=None; memberList=m; 
+      declClassLoc=$startpos, $endpos} }
+| CLASS; i= decl_class_ident; s0= supers; LBRACE; PUBLIC; COLON; m=member*; 
+RBRACE; SEMICOLON
+  { { className= i; supersOpt=s0; memberList=m; 
+      declClassLoc=$startpos, $endpos} }
 ;
 
+decl_class_ident:
+| i = IDENT {Lex.add_tident i; i}
+				       
 supers:
   COLON; slist= separated_nonempty_list(COMMA, pubtident); { Some slist } 
 ;

@@ -1,0 +1,28 @@
+
+** Conflict (reduce/reduce) in state 76.
+** Tokens involved: VOID TIDENT INT EOF CLASS
+** The following explanations concentrate on token VOID.
+** This state is reached from file after reading:
+
+CLASS IDENT decl_class_aux 
+
+** The derivations that appear below have the following common factor:
+** (The question mark symbol (?) represents the spot where the derivations begin to differ.)
+
+file 
+list(decl) EOF 
+decl list(decl) // lookahead token appears because list(decl) can begin with VOID
+decl_class // lookahead token is inherited
+(?)
+
+** In state 76, looking ahead at VOID, reducing production
+** decl_class -> CLASS IDENT decl_class_aux 
+** is permitted because of the following sub-derivation:
+
+CLASS IDENT decl_class_aux . 
+
+** In state 76, looking ahead at VOID, reducing production
+** decl_class -> CLASS IDENT decl_class_aux 
+** is permitted because of the following sub-derivation:
+
+CLASS IDENT decl_class_aux . 
