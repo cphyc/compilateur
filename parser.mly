@@ -44,11 +44,7 @@ decl_vars:
 ;
 
 decl_class: 
-| CLASS; i= decl_class_ident; LBRACE; PUBLIC; COLON; m=member*; 
-RBRACE; SEMICOLON
-  { { className= i; supersOpt=None; memberList=m; 
-      declClassLoc=$startpos, $endpos} }
-| CLASS; i= decl_class_ident; s0= supers; LBRACE; PUBLIC; COLON; m=member*; 
+| CLASS; i= decl_class_ident; s0= supers?; LBRACE; PUBLIC; COLON; m=member*; 
 RBRACE; SEMICOLON
   { { className= i; supersOpt=s0; memberList=m; 
       declClassLoc=$startpos, $endpos} }
@@ -58,7 +54,7 @@ decl_class_ident:
 | i = IDENT {Lex.add_tident i; i}
 				       
 supers:
-  COLON; slist= separated_nonempty_list(COMMA, pubtident); { Some slist } 
+  COLON; slist= separated_nonempty_list(COMMA, pubtident); { slist } 
 ;
 
 %inline pubtident:
