@@ -4,8 +4,7 @@ Mini C++
 Dépendances
 ===========
 
-OCaml 4.01.0
-Menhir
+OCaml 4.01.0 et Menhir
 
 Installation
 ===========
@@ -13,7 +12,7 @@ Installation
     cd compilateur
     make
 
-Pour supprimmer l'ensemble des fichiers auxiliaires :
+Pour supprimer l'ensemble des fichiers auxiliaires :
 
     make clean
 
