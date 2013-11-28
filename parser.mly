@@ -74,7 +74,7 @@ proto:
 | t= TIDENT; LPAREN; args= separated_list(COMMA, argument); RPAREN 
    { {protoVar= Tident t; argumentList= args;
       protoLoc= $startpos, $endpos} }
-| t= TIDENT; DCOLON; tmem= TIDENT; 
+| t= TIDENT; DCOLON; tmem= TIDENT; LPAREN
   args= separated_list(COMMA, argument); RPAREN 
   { {protoVar= TidentTident (t, tmem); argumentList= args; 
      protoLoc= $startpos, $endpos} }
@@ -192,6 +192,10 @@ instruction:
 expr_str: 
 | e= expr {ExprStrExpr e}
 | s= STRING {ExprStrStr s}
+| ENDL {ExprStrStr "\n"} 
+(*Il me semble que endl n'est pas un simple retour à la ligne en C++, 
+idéalement il faudrait refaire l'arbre de syntaxe abstraite (ExprStrEndl ?),
+mais vu que c'est pas dans le sujet, on s'en contentera pour l'instant.*)
 ;
 
 /* Définition d'un bloc */
