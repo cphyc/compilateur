@@ -2,6 +2,7 @@
   open Format
   open Ast
   open Tokens
+  open Lexer
 %}
 
 /* Point d'entrée de la grammaire */
@@ -10,14 +11,6 @@
 /* Type retourné par le lexer */
 %type <Ast.fichier> file
 
-%parameter<Lex: sig
-  exception Lexing_error of string
-  val find_tident : string -> bool
-  val add_tident : string -> unit
-  val print_everything : unit -> unit
-end>
-%{
-%}
 %%
 
 /* Type général d'un fichier */
@@ -51,7 +44,7 @@ RBRACE; SEMICOLON
 ;
 
 decl_class_ident:
-| i = IDENT {Lex.add_tident i; i}
+| i = IDENT {Lexer.add_tident i; i}
 				       
 supers:
   COLON; slist= separated_nonempty_list(COMMA, pubtident); { slist } 

@@ -2,7 +2,6 @@
 
 open Format
 
-module HackedParser = Parser.Make(Lexer)
 (* Option de compilation, pour s'arrêter à l'issue du parser *)
 let parse_only = ref false
 
@@ -51,7 +50,7 @@ let () =
   let buf = Lexing.from_channel f in
   
   try
-    let _ = HackedParser.file Lexer.token buf in
+    let _ = Parser.file Lexer.token buf in
     close_in f;
     (*if !parse_only then exit 0*)
   with 
@@ -61,7 +60,7 @@ let () =
     localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));
     eprintf "Erreur dans l'analyse lexicale: %s.@." c;
     exit 1
-  | HackedParser.Error -> 
+  | Parser.Error -> 
       (* Erreur syntaxique. On récupère sa position absolue et on la 
 	 convertit en numéro de ligne *)
     localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));
