@@ -7,27 +7,29 @@
 \begin{document}
 \maketitle
 \section*{Compiler le fichier}
-Pour compiler le projet, il faut utiliser \texttt{make}. Cette
-commande créée un binaire \texttt{minic++} dans le répertoire local.
+Pour compiler le projet, la commande \texttt{make} réalise
+automatiquement cette tache. Elle créée un binaire \texttt{minic++}
+dans le répertoire local. Pour nettoyer le répertoire local des
+fichiers compilés et des fichiers temporaires, utiliser \texttt{make clean}.
 
-Ce binaire, qui est la première moitié du compilateur, réalise
-l'analyse syntaxique et lexicale du fichier. La syntaxe d'utilisation
-de \texttt{minic++} est : \texttt{\$ ./minic++ fichier-a-compiler.cpp}. Le
-compilateur ne renvoie rien dans le cas d'une analyse syntaxique et
-lexicale sans erreur. Si une erreur est détectée, la compilation
-s'arrete et renvoie un code d'erreur avec une indication de la
-position de l'erreur.
+Le binaire, qui est la première moitié du compilateur, réalise
+l'analyse syntaxique et lexicale du fichier passé en argument. La
+syntaxe d'utilisation de \texttt{minic++} est : \texttt{\$./minic++
+  fichier-a-compiler.cpp}. Le compilateur ne renvoie rien dans le cas
+d'une analyse syntaxique et lexicale sans erreur. Si une erreur est
+détectée, la compilation s'arrete et renvoie un code d'erreur avec une
+indication de la position de l'erreur.
 \section*{Réalisation du projet}
 Le compilateur a été réalisé en OCaml et utilise le générateur
-d'analyseur syntaxique ocamllex (lexer) et l'analyseur grammaticale
-menhir (parser).
+d'analyseur syntaxique \texttt{ocamllex} (lexer) et l'analyseur grammaticale
+\texttt{menhir} (parser).
 
 Le parser traduit les règles de syntaxe du langage en une fonction
 qui prend un tampon d'analyse lexicale (ici, les caractères d'un
 fichier) et renvoie une liste de jetons (tokens). Pour distinguer les
 identificateurs des mots-clés et des identificateurs de classe, on
 utilise une table de hashage contenant les mots-clés (keywords) et les
-identificateurs de classe (TIDENT).
+identificateurs de classe (tident).
 
 L'analyseur grammatical (parser) traduit les règles de grammaire en
 une fonction qui à un lexeur associe un arbre de syntaxe
@@ -35,15 +37,19 @@ abstraite. Notre analyseur grammatical utilise le module du lexer
 directement. On peut ainsi modifier dans le parser la liste
 des identificateurs de classe et réaliser le \emph{lexer hack}.
 
-De plus, le parser a résolu ses problèmes d'expansion/réduction sur
-les opérateurs unaires en créant un jeton abstrait de précédence
-différente et en utilisant le mot-clé \texttt{\%prec} pour indiquer que les
-opérateurs unaires n'ont pas la meme précédence que les opérateurs
-binaires. De meme, cette méthode a été utilisée pour gérer la
-structure \texttt{if ... else ...} \emph{via} un jeton abstrait then.
+De plus, le parser a résolu ses problèmes d'expansion/réduction
+(shift/reduction) sur les opérateurs unaires en créant un jeton
+abstrait de précédence différente et en utilisant le mot-clé
+\texttt{\%prec} pour indiquer que les opérateurs unaires n'ont pas la
+meme précédence que les opérateurs binaires. De meme, cette méthode a
+été utilisée pour gérer la structure \texttt{if ... else ...}
+\emph{via} un jeton abstrait \texttt{then}.
+\pagebreak
 \section*{Fichiers}
 Le projet utilise les fichiers suivants :
 \begin{itemize}
+  \item \texttt{main.ml} : fichier principal qui ouvre le fichier à
+    compiler et manipule le lexer et le parser;
   \item \texttt{lexer.mll} : règles de syntaxe utilisées par \texttt{ocamllex} pour
     compiler l'analyseur syntaxique;
   \item \texttt{parser.mly} : règles de grammaire et construction de l'arbre de
