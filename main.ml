@@ -43,16 +43,16 @@ let () =
     exit 1
   end;
   
-    (* Ouverture du fichier source en lecture *)
+  (* Ouverture du fichier source en lecture *)
   let f = open_in !ifile in
   
-    (* Création d'un tampon d'analyse lexicale *)
+  (* Création d'un tampon d'analyse lexicale *)
   let buf = Lexing.from_channel f in
   
+  (* Tentative d'analyse lexicale et grammaticale *)
   try
     let _ = Parser.file Lexer.token buf in
     close_in f;
-    (*if !parse_only then exit 0*)
   with 
   | Lexer.Lexing_error c ->
       (* Erreur lexicale. On récupère sa position absolue et 
@@ -66,7 +66,3 @@ let () =
     localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));
     eprintf "Erreur dans l'analyse syntaxique@.";
     exit 1
-  (*| Interp.Error s-> 
-    (* Erreur pendant l'interprétation *)
-    eprintf "Erreur : %s@." s;
-    exit 1*)
