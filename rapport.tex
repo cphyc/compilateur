@@ -1,14 +1,14 @@
 \documentclass{article}
 \usepackage[utf8]{inputenc}
 \usepackage[francais]{babel}
-\title{Compilateur mini-C++ - analyseur syntaxique et analyseur grammatical}
+\title{Compilateur MiniC++ - analyseur syntaxique et analyseur grammatical}
 \author{Corentin Cadiou, Ken Chanseau Saint-Germain}
 \date{29 novembre 2013}
 \begin{document}
 \maketitle
 \section*{Compiler le fichier}
 Pour compiler le projet, la commande \texttt{make} réalise
-automatiquement cette tache. Elle créée un binaire \texttt{minic++}
+automatiquement cette tâche. Elle créée un binaire \texttt{minic++}
 dans le répertoire local. Pour nettoyer le répertoire local des
 fichiers compilés et des fichiers temporaires, utiliser \texttt{make clean}.
 
@@ -17,7 +17,7 @@ l'analyse syntaxique et lexicale du fichier passé en argument. La
 syntaxe d'utilisation de \texttt{minic++} est : \texttt{\$./minic++
   fichier-a-compiler.cpp}. Le compilateur ne renvoie rien dans le cas
 d'une analyse syntaxique et lexicale sans erreur. Si une erreur est
-détectée, la compilation s'arrete et renvoie un code d'erreur avec une
+détectée, la compilation s'arrête et renvoie un code d'erreur avec une
 indication de la position de l'erreur.
 
 \section*{Réalisation du projet}
@@ -29,20 +29,20 @@ Le parser traduit les règles de syntaxe du langage en une fonction
 qui prend un tampon d'analyse lexicale (ici, les caractères d'un
 fichier) et renvoie une liste de jetons (tokens). Pour distinguer les
 identificateurs des mots-clés et des identificateurs de classe, on
-utilise une table de hashage contenant les mots-clés (keywords) et les
+utilise une table de hachage contenant les mots-clés (keywords) et les
 identificateurs de classe (tident).
 
 L'analyseur grammatical (parser) traduit les règles de grammaire en
 une fonction qui à un lexeur associe un arbre de syntaxe
-abstraite. Notre analyseur grammatical utilise le module du lexer
-directement. On peut ainsi modifier dans le parser la liste
+abstraite. Notre analyseur grammatical utilise le module du lexeur
+directement. On peut ainsi modifier dans le parseur la liste
 des identificateurs de classe et réaliser le \emph{lexer hack}.
 
-De plus, le parser a résolu ses problèmes d'expansion/réduction
+De plus, le parseur a résolu ses problèmes d'expansion/réduction
 (shift/reduction) sur les opérateurs unaires en créant un jeton
 abstrait de précédence différente et en utilisant le mot-clé
 \texttt{\%prec} pour indiquer que les opérateurs unaires n'ont pas la
-meme précédence que les opérateurs binaires. De meme, cette méthode a
+même précédence que les opérateurs binaires. De même, cette méthode a
 été utilisée pour gérer la structure \texttt{if ... else ...}
 \emph{via} un jeton abstrait \texttt{then}.
 \pagebreak
@@ -54,11 +54,11 @@ Le projet utilise les fichiers suivants :
   \item \texttt{lexer.mll} : règles de syntaxe utilisées par \texttt{ocamllex} pour
     compiler l'analyseur syntaxique;
   \item \texttt{parser.mly} : règles de grammaire et construction de l'arbre de
-    syntaxe abstraite à l'aide de l'outil menhir;
+    syntaxe abstraite à l'aide de l'outil Menhir;
   \item \texttt{tokens.mly} : liste de jetons (tokens) utilisés par le parseur;
   \item \texttt{ast.mli} : structure de l'arbre de syntaxe abstraite;
   \item \texttt{Makefile} : fichier gérant la compilation, supporte les
-    arguments all (optionnel) pour compiler minic++ et clean pour
+    arguments \texttt{all} (optionnel) pour compiler Minic++ et \texttt{clean} pour
     nettoyer le répertoire des fichiers temporaires créés lors de la compilation.
 \end{itemize}
   
