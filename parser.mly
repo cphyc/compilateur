@@ -2,6 +2,7 @@
   open Format
   open Ast
   open Tokens
+  open Lexer
 %}
 
 /* Point d'entrée de la grammaire */
@@ -10,14 +11,6 @@
 /* Type retourné par le lexer */
 %type <Ast.fichier> file
 
-%parameter<Lex: sig
-  exception Lexing_error of string
-  val find_tident : string -> bool
-  val add_tident : string -> unit
-  val print_everything : unit -> unit
-end>
-%{
-%}
 %%
 
 /* Type général d'un fichier */
@@ -44,27 +37,17 @@ decl_vars:
 ;
 
 decl_class: 
-| CLASS; i= IDENT; LBRACE; PUBLIC; COLON; m=member*; RBRACE; SEMICOLON
-  { (* Le code commenté ne sert à rien : si on a un ident, c'est pas un tident
-    donc pas la peine de vérifier*)
-    (*match Lex.find_tident i with
-    | true -> raise (Lex.Lexing_error i)
-    | false ->*)
-      Lex.add_tident i;
-      { className= i; supersOpt=None; memberList=m; 
-      declClassLoc=$startpos, $endpos};
-  }
-| CLASS; i= IDENT; s0= supers LBRACE; PUBLIC; COLON; m=member*; 
-  RBRACE; SEMICOLON; 
-  { 
-    Lex.add_tident i;
-    { className= i; supersOpt= s0; memberList= m; 
-      declClassLoc= $startpos, $endpos}
-  }
+| CLASS; i= decl_class_ident; s0= supers?; LBRACE; PUBLIC; COLON; m=member*; 
+RBRACE; SEMICOLON
+  { { className= i; supersOpt=s0; memberList=m; 
+      declClassLoc=$startpos, $endpos} }
 ;
 
+decl_class_ident:
+| i = IDENT {Lexer.add_tident i; i}
+				       
 supers:
-  COLON; slist= separated_nonempty_list(COMMA, pubtident); { Some slist } 
+  COLON; slist= separated_nonempty_list(COMMA, pubtident); { slist } 
 ;
 
 %inline pubtident:
@@ -84,7 +67,7 @@ proto:
 | t= TIDENT; LPAREN; args= separated_list(COMMA, argument); RPAREN 
    { {protoVar= Tident t; argumentList= args;
       protoLoc= $startpos, $endpos} }
-| t= TIDENT; DCOLON; tmem= TIDENT; 
+| t= TIDENT; DCOLON; tmem= TIDENT; LPAREN
   args= separated_list(COMMA, argument); RPAREN 
   { {protoVar= TidentTident (t, tmem); argumentList= args; 
      protoLoc= $startpos, $endpos} }
@@ -202,6 +185,10 @@ instruction:
 expr_str: 
 | e= expr {ExprStrExpr e}
 | s= STRING {ExprStrStr s}
+| ENDL {ExprStrStr "\n"} 
+(*Il me semble que endl n'est pas un simple retour à la ligne en C++, 
+idéalement il faudrait refaire l'arbre de syntaxe abstraite (ExprStrEndl ?),
+mais vu que c'est pas dans le sujet, on s'en contentera pour l'instant.*)
 ;
 
 /* Définition d'un bloc */

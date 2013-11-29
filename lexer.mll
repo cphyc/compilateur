@@ -30,12 +30,6 @@
       
   let id_or_kwd s = try Hashtbl.find kwd_tbl s with 
       Not_found -> IDENT s
-
-  (* va à la ligne suivante en incrémentant la référence de ligne *)
-  let newline lexbuf =
-    let pos = lexbuf.lex_curr_p in
-    lexbuf.lex_curr_p <- 
-      { pos with pos_lnum = pos.pos_lnum + 1; pos_bol = pos.pos_cnum }
 }
 
 let digit = ['0'-'9']
@@ -55,7 +49,8 @@ let space = [' ' '\t']
 rule token = parse
   | "#include <iostream>" { IOSTREAM }
   | "std::cout" { COUT }
-  | "\n"    { newline lexbuf; token lexbuf }
+  | "std::endl" {ENDL}
+  | "\n"    { Lexing.new_line lexbuf; token lexbuf }
   | space+  { token lexbuf }
   | string as s { STRING (String.sub s 1 (String.length s - 1)) }
   | ident as id { id_or_kwd id }
@@ -89,7 +84,7 @@ rule token = parse
   | "::"    { DCOLON }
   | ";"     { SEMICOLON }
   | "/*"    { comment lexbuf }
-  | "//"    { newline lexbuf; token lexbuf }
+  | "//"    { commentbis lexbuf }
   | integer as s { CST (int_of_string s) }
   | eof     { EOF }
   | _ as c  { raise (Lexing_error ("illegal character: " ^ String.make 1 c)) }
@@ -97,4 +92,9 @@ rule token = parse
 and comment = parse
   | "*/"    { token lexbuf }
   | _       { comment lexbuf }
-  | eof     { raise (Lexing_error ("unterminated comment")) }
+  | eof     { raise (Lexing_error ("unclosed comment")) }
+
+and commentbis = parse
+  | '\n' {Lexing.new_line lexbuf; token lexbuf}
+  | _ {commentbis lexbuf}
+  | eof {EOF}

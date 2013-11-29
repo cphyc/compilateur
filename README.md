@@ -1,27 +1,32 @@
-compilateur
+Mini C++
 ===========
-Le test suivant retourne une erreur ...
 
+Dépendances
+===========
 
-    int m() {int a }
+OCaml 4.01.0 et Menhir
 
+Installation
+===========
 
-Ce qui ne marche / ne marche pas 
-==========
-* [x] iostream		
-* [x] decl_vars		
-* [x] decl_class	
-* [ ] supers : ne marchent pas (logique, il manque le lexer hack pour les TIDENT)
-* [x] member 		
-* [x] proto				 (vérifier les TIDENT)
-* [x] type				 (vérifier les TIDENT)
-* [x] argument			(vérifier les TIDENT)
-* [x] var					 
-* [x] qvar				 (vérifier les TIDENT)
-* [x] qident			 (...)
-* [x] expr				
-* [x] operateur		
-* [x] instruction  (if nécessite des {} autour de la première instruction ...)
-* [x] expr_str		
-* [x] bloc				
-* [ ] lexer hack
+    cd compilateur
+    make
+
+Pour supprimer l'ensemble des fichiers auxiliaires :
+
+    make clean
+
+Exécution et exemples
+===========
+
+Pour compiler un fichier exemple.cpp :
+
+    ./minic++ exemple.cpp
+
+Pour n'exécuter que l'analyse syntaxique :
+
+    ./minic++ --parse-only exemple.cpp
+
+Un script permettant d'effectuer les tests donnés par le sujet est inclus :
+
+    ./test.sh
