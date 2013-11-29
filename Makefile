@@ -8,7 +8,7 @@ BIN=minic++
 FLAGS=
 
 all: $(BIN)
-	@echo ''Youpi !''
+	@echo ''Compilation réussie.''
 
 $(BIN):$(CMO)
 	$(COMPILER) $(FLAGS) -o $(BIN) $(CMO)
