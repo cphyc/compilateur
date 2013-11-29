@@ -17,15 +17,7 @@
 	"void", VOID; "while", WHILE
       ]
   
-  (* Cherche un identificateur dynamiquement *)
-  let find_tident s = Hashtbl.mem kwd_tbl s
-      
-  let print_everything () =
-    Format.printf "Pipi0 \n";
-    Hashtbl.iter (fun a -> fun b -> (Format.printf "%s @." a)) kwd_tbl;
-    Format.printf "Pipi1 \n"
-    
-
+  (* Cherche un identificateur dynamiquement *)      
   let add_tident s = Hashtbl.add kwd_tbl s (TIDENT s) 
       
   let id_or_kwd s = try Hashtbl.find kwd_tbl s with 
