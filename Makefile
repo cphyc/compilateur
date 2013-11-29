@@ -32,7 +32,7 @@ parser.ml parser.mli: parser.mly
 	$(PARSER) $(PARSER-OPTS) --base parser --external-tokens Tokens -v tokens.mly parser.mly
 
 clean:
-	@echo "Removing unwanted files from the workspace ..."
+	@echo "Suppression des fichiers généras par make."
 	@rm -f *.cm[io] *.o *~ *.annot *.automaton .depend sortie_test $(BIN) $(GENERATED) parser.output
 
 .depend depend:$(GENERATED)
