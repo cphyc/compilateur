@@ -19,9 +19,10 @@ syntaxe d'utilisation de \texttt{minic++} est : \texttt{\$./minic++
 d'une analyse syntaxique et lexicale sans erreur. Si une erreur est
 détectée, la compilation s'arrete et renvoie un code d'erreur avec une
 indication de la position de l'erreur.
+
 \section*{Réalisation du projet}
 Le compilateur a été réalisé en OCaml et utilise le générateur
-d'analyseur syntaxique \texttt{ocamllex} (lexer) et l'analyseur grammaticale
+d'analyseur syntaxique \texttt{ocamllex} (lexer) et l'analyseur grammatical
 \texttt{menhir} (parser).
 
 Le parser traduit les règles de syntaxe du langage en une fonction
@@ -49,12 +50,12 @@ meme précédence que les opérateurs binaires. De meme, cette méthode a
 Le projet utilise les fichiers suivants :
 \begin{itemize}
   \item \texttt{main.ml} : fichier principal qui ouvre le fichier à
-    compiler et manipule le lexer et le parser;
+    compiler et manipule le lexeur et le parseur;
   \item \texttt{lexer.mll} : règles de syntaxe utilisées par \texttt{ocamllex} pour
     compiler l'analyseur syntaxique;
   \item \texttt{parser.mly} : règles de grammaire et construction de l'arbre de
     syntaxe abstraite à l'aide de l'outil menhir;
-  \item \texttt{tokens.mly} : liste de jetons (tokens) utilisés par le parser;
+  \item \texttt{tokens.mly} : liste de jetons (tokens) utilisés par le parseur;
   \item \texttt{ast.mli} : structure de l'arbre de syntaxe abstraite;
   \item \texttt{Makefile} : fichier gérant la compilation, supporte les
     arguments all (optionnel) pour compiler minic++ et clean pour
