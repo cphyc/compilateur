@@ -51,8 +51,10 @@ let () =
   
   (* Tentative d'analyse lexicale et grammaticale *)
   try
-    let _ = Parser.file Lexer.token buf in
+    let tree = Parser.file Lexer.token buf in
     close_in f;
+    let _ = Typer.file tree in
+    ();
   with 
   | Lexer.Lexing_error c ->
       (* Erreur lexicale. On récupère sa position absolue et 

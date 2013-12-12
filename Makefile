@@ -1,4 +1,4 @@
-CMO=tokens.cmo lexer.cmo parser.cmo main.cmo
+CMO=tokens.cmo lexer.cmo parser.cmo typer.cmo main.cmo
 COMPILER = ocamlc
 LEXER = ocamllex
 PARSER = menhir
