@@ -6,6 +6,46 @@ open Ast
 module Smap = Map.Make(String)
 type env = typ Smap.t
 
+let rec typConverter typ = 
+  let loc = typ.typLoc in
+  let typContT = 
+    match typ.typCont with
+    | TypVoid -> Tast.TypVoid
+    | TypInt -> Tast.TypInt
+    | TypIdent s -> Tast.TypIdent s
+  in
+  { Tast.typCont = typContT; Tast.typLoc = loc }
+
+let rec qvarTyper qvar = 
+  let loc = qvar.Ast.qvarLoc in
+  let qvarContT = 
+    match qvar.qvarCont with
+    | QvarQident qident -> assert false
+    | QvarPointer qvar -> Tast.QvarPointer (qvarTyper qvar)
+    | QvarReference qvar -> Tast.QvarReference (qvarTyper qvar)
+  in
+  { Tast.qvarCont = qvarContT; Tast.qvarLoc = loc }
+
+let protoVarTTyper = function
+  | Qvar (typ, qvar) -> Tast.Qvar (typConverter typ, qvarTyper qvar)
+  | Tident s -> assert false
+  | TidentTident (s1, s2) -> assert false
+
+let varTyper v = assert false
+
+let argumentTyper arg = 
+  { 
+    Tast.argumentTyp = typConverter arg.Ast.argumentTyp;
+    Tast.argumentVar = varTyper arg.Ast.argumentVar;
+    Tast.argumentLoc = arg.Ast.argumentLoc
+  }
+
+let protoTyper proto = 
+  {
+    Tast.protoVar = protoVarTTyper proto.Ast.protoVar;
+    Tast.argumentList = List.map argumentTyper proto.Ast.argumentList;
+    Tast.protoLoc = proto.Ast.protoLoc 
+  }
 (* t est un type, v une variable.*)
 let rec declVarTyper t v = match v.Ast.varCont with
   | Ast.VarIdent s -> 
@@ -58,16 +98,17 @@ let declTyper t d = function
       {
 	Tast.className = c.Ast.className;
 	Tast.supersOpt = c.Ast.supersOpt;
-	(* On a une member list, on la décore avec les types *)
+	(* On a une member list, on la décore avec les types. On traite les
+	   différents cas en fonction du type de member qu'on a. *)
 	Tast.memberList = List.map
 	  (fun member -> match member with
 	  | MemberDeclVars dv -> 
-	    let vList = declVarsTyper dv.Ast.declVarsTyp dv.Ast.varList in
 	    (* On décore l'arbre avec les types, puis on reconstruit *)
+	    let vList = declVarsTyper dv.Ast.declVarsTyp dv.Ast.varList in
 	    Tast.MemberDeclVars 
-	      {varList = vList; declVarsLoc = dv.Ast.declVarsLoc }
-	  | VirtualProto (virt, proto) when virt -> assert false
-	  | VirtualProto (_, proto) -> assert false
+	      { varList = vList; declVarsLoc = dv.Ast.declVarsLoc }
+	  | VirtualProto (virt, proto) -> 
+	    Tast.VirtualProto (virt, protoTyper proto)
 	    
 	  ) c.Ast.memberList;
 	Tast.declClassLoc = c.Ast.declClassLoc;
