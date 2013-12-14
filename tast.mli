@@ -1,4 +1,4 @@
-(* Définition de la structure de l'arbre de syntaxe abstraite *)
+(* Définition de la structure de l'arbre de syntaxe abstraite typé *)
 
 (* Localisation d'un token *)
 type loc = Lexing.position * Lexing.position
