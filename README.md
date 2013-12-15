@@ -5,9 +5,10 @@ State of the art
 
 Le compilateur permet pour le moment de compiler (sans créer le code) :
 
-   int maint () {
-       cout << 42 ;
-   }
+
+    int maint () {
+    	cout << 42 ;
+    }
 
 
 Dépendances
