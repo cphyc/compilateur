@@ -4,17 +4,17 @@
 type loc = Lexing.position * Lexing.position
 
 (* Ensemble de type de l'arbre de syntaxe abstraite *)
-type fichier = {iostr: bool; fichierDecl: decl list; fichierLoc: loc}
+type fichier = {iostr: bool; fichierDecl: decl list}
 
 and decl = 
 | DeclVars of declVars
 | DeclClass of declClass
 | ProtoBloc of proto * bloc
     
-and declVars = {varList: var list; declVarsLoc: loc}
+and declVars = var list
   
 and declClass = {className: string; supersOpt: supers option;
-                 memberList: member list; declClassLoc: loc}
+                 memberList: member list}
   
 and supers = string list
   
@@ -22,29 +22,25 @@ and member =
 | MemberDeclVars of declVars
 | VirtualProto of bool * proto
 
-and proto = {protoVar: protoVarT; argumentList: argument list;
-             protoLoc: loc}
+and proto = {protoVar: protoVarT; argumentList: argument list}             
 
 and protoVarT =
 | Qvar of typ * qvar
 | Tident of string
 | TidentTident of string * string
 
-and typ = {typCont: typContT; typLoc: loc}
-
-and typContT =
+and typ =
 | TypNull
 | TypVoid
 | TypInt
 | TypIdent of string
 | TypPointer of typ
 
-and argument = {argumentTyp: typ; argumentVar: var; argumentLoc: loc}
+and argument = {argumentTyp: typ; argumentVar: var}
 
-and var = {varIdent: string; varRef: bool; varTyp: typ; varLoc: loc}
+and var = {varIdent: string; varRef: bool; varTyp: typ}
 
-and qvar = {qvarCont: qvarContT; qvarLoc: loc}
-and qvarContT =
+and qvar =
 | QvarQident of qident
 | QvarPointer of qvar
 | QvarReference of qvar
@@ -53,8 +49,7 @@ and qident =
 | Ident of string
 | IdentIdent of string * string
 
-and expr = {exprCont: exprContT; exprLoc: loc}
-and exprContT =
+and expr =
 | ExprInt of int
 | This
 | False
@@ -78,8 +73,7 @@ and exprContT =
 | ExprOp of expr * op * expr
 | ExprParenthesis of expr
 
-and op = {opCont: opCont; opLoc: loc}
-and opCont =
+and op = 
 | OpEqual
 | OpDiff
 | OpLesser
@@ -94,8 +88,7 @@ and opCont =
 | OpAnd
 | OpOr
 
-and ins = {insCont: insContT; insLoc: loc}
-and insContT =
+and ins =
 | InsSemicolon
 | InsExpr of expr
 | InsDef of typ * var * (insDef option)
@@ -114,4 +107,4 @@ and expr_str =
 | ExprStrExpr of expr
 | ExprStrStr of string
 
-and bloc = {blocCont : (ins list); blocLoc: loc}
+and bloc = ins list
