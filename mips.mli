@@ -218,7 +218,7 @@ val align : int ->  [> ] asm
 (** [align n] aligne le code suivant l'instruction sur 2^n octets *)
 
 val asciiz : string -> data
-(** place une constante chaîne de carctères (terminées par 0) dans a
+(** place une constante chaîne de carctères (terminées par 0) dans la
     zone data *)
 
 val dword : int list -> data
