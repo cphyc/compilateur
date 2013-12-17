@@ -11,7 +11,7 @@
 /* Associativité */
 %right EQ
 %left OR
-%left AND 
+%left AND
 %left DEQ NEQ
 %left PLUS MINUS
 %left LT LE GT GE

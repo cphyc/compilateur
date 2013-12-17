@@ -15,13 +15,13 @@
 
 /* Type général d'un fichier */
 file:
- | IOSTREAM; d= decl*;  EOF 
-    { {iostr= true; fichierDecl= d; 
-      fichierLoc= $startpos, $endpos} } 
- | d= decl*;  EOF 
-    { {iostr= false; fichierDecl= d; 
-      fichierLoc= $startpos, $endpos} } 
-; 
+ | IOSTREAM; d= decl*; EOF
+    { {iostr= true; fichierDecl= d;
+      fichierLoc= $startpos, $endpos} }
+ | d= decl*; EOF
+    { {iostr= false; fichierDecl= d;
+      fichierLoc= $startpos, $endpos} }
+;
 
 /* Déclarations */
 decl:
@@ -36,18 +36,18 @@ decl_vars:
 
 ;
 
-decl_class: 
-| CLASS; i= decl_class_ident; s0= supers?; LBRACE; PUBLIC; COLON; m=member*; 
+decl_class:
+| CLASS; i= decl_class_ident; s0= supers?; LBRACE; PUBLIC; COLON; m=member*;
 RBRACE; SEMICOLON
-  { { className= i; supersOpt=s0; memberList=m; 
+  { { className= i; supersOpt=s0; memberList=m;
       declClassLoc=$startpos, $endpos} }
 ;
 
 decl_class_ident:
 | i = IDENT {Lexer.add_tident i; i}
-				       
+                                
 supers:
-  COLON; slist= separated_nonempty_list(COMMA, pubtident); { slist } 
+  COLON; slist= separated_nonempty_list(COMMA, pubtident); { slist }
 ;
 
 %inline pubtident:
@@ -61,15 +61,15 @@ member:
 ;
 
 proto:
-| t= typ; q= qvar; LPAREN; args= separated_list(COMMA, argument); RPAREN 
+| t= typ; q= qvar; LPAREN; args= separated_list(COMMA, argument); RPAREN
    { {protoVar= Qvar (t, q); argumentList= args;
       protoLoc= $startpos, $endpos} }
-| t= TIDENT; LPAREN; args= separated_list(COMMA, argument); RPAREN 
+| t= TIDENT; LPAREN; args= separated_list(COMMA, argument); RPAREN
    { {protoVar= Tident t; argumentList= args;
       protoLoc= $startpos, $endpos} }
 | t= TIDENT; DCOLON; tmem= TIDENT; LPAREN
-  args= separated_list(COMMA, argument); RPAREN 
-  { {protoVar= TidentTident (t, tmem); argumentList= args; 
+  args= separated_list(COMMA, argument); RPAREN
+  { {protoVar= TidentTident (t, tmem); argumentList= args;
      protoLoc= $startpos, $endpos} }
 ;
 
@@ -81,7 +81,7 @@ typ:
 ;
 
 argument:
-  t= typ; v= var 
+  t= typ; v= var
    { {argumentTyp= t; argumentVar= v; argumentLoc= $startpos, $endpos} }
 ;
 
@@ -111,9 +111,9 @@ expr:
 | NULL { {exprCont= Null; exprLoc= $startpos, $endpos} }
 | q= qident { {exprCont= ExprQident q; exprLoc= $startpos, $endpos} }
 | e= expr DOT i= IDENT { {exprCont=ExprDot (e,i); exprLoc= $startpos, $endpos} }
-| e= expr POINTER i= IDENT 
+| e= expr POINTER i= IDENT
    { {exprCont= ExprArrow (e,i); exprLoc= $startpos, $endpos} }
-| e1= expr EQ e2= expr 
+| e1= expr EQ e2= expr
    { {exprCont= ExprEqual (e1,e2); exprLoc= $startpos, $endpos } }
 | e= expr LPAREN elist= separated_list(COMMA, expr) RPAREN
    { {exprCont= ExprApply (e,elist); exprLoc= $startpos, $endpos} }
@@ -125,16 +125,16 @@ expr:
 | e= expr DMINUS { {exprCont= ExprRDecr e; exprLoc= $startpos, $endpos} }
 | AMP e= expr { {exprCont= ExprAmpersand e; exprLoc= $startpos, $endpos} }
 | EXCL e= expr { {exprCont= ExprExclamation e; exprLoc= $startpos, $endpos} }
-| STAR e= expr { {exprCont= ExprStar e; exprLoc= $startpos, $endpos} } 
+| STAR e= expr { {exprCont= ExprStar e; exprLoc= $startpos, $endpos} }
   %prec USTAR
-| MINUS e= expr { {exprCont= ExprMinus e; exprLoc= $startpos, $endpos} } 
+| MINUS e= expr { {exprCont= ExprMinus e; exprLoc= $startpos, $endpos} }
   %prec UMINUS
-| PLUS e= expr { {exprCont= ExprPlus e; exprLoc= $startpos, $endpos} } 
+| PLUS e= expr { {exprCont= ExprPlus e; exprLoc= $startpos, $endpos} }
   %prec UPLUS
     (*On distingue ici les opérateurs unaires.*)
 | e1= expr op= operator e2= expr
     { {exprCont= ExprOp(e1,op,e2); exprLoc= $startpos, $endpos} }
-| LPAREN e= expr RPAREN 
+| LPAREN e= expr RPAREN
    { {exprCont= ExprParenthesis e; exprLoc= $startpos, $endpos} }
 ;
 
@@ -149,44 +149,44 @@ expr:
 | MINUS { {opCont= OpMinus; opLoc= $startpos, $endpos} }
 | STAR { {opCont= OpTimes; opLoc= $startpos, $endpos} }
 | DIV { {opCont= OpDivide; opLoc= $startpos, $endpos} }
-| MOD { {opCont= OpModulo; opLoc= $startpos, $endpos} } 
+| MOD { {opCont= OpModulo; opLoc= $startpos, $endpos} }
 | AND { {opCont= OpAnd; opLoc= $startpos, $endpos} }
 | OR { {opCont= OpOr; opLoc= $startpos, $endpos} }
 ;
 
 /* Définition d'une instruction */
-instruction: 
+instruction:
 | SEMICOLON { {insCont= InsSemicolon; insLoc= $startpos, $endpos} }
-| e= expr SEMICOLON { {insCont= InsExpr e; insLoc= $startpos, $endpos} } 
-| t= typ; v= var 
+| e= expr SEMICOLON { {insCont= InsExpr e; insLoc= $startpos, $endpos} }
+| t= typ; v= var
    { {insCont= InsDef (t, v, None); insLoc= $startpos, $endpos} }
-| t= typ; v= var; EQ; e= expr SEMICOLON 
+| t= typ; v= var; EQ; e= expr SEMICOLON
    { {insCont= InsDef (t, v, Some (InsDefExpr e)); insLoc= $startpos, $endpos} }
 | t= typ; v= var; EQ; ti= TIDENT;
-   LPAREN elist= separated_list(COMMA, expr) RPAREN SEMICOLON 
+   LPAREN elist= separated_list(COMMA, expr) RPAREN SEMICOLON
    { {insCont= InsDef(t, v, Some (InsDefIdent (ti, elist)));
      insLoc= $startpos, $endpos} }
 | IF LPAREN e= expr RPAREN i= instruction %prec THEN
    { {insCont= InsIf (e,i); insLoc= $startpos, $endpos} }
 | IF LPAREN e= expr RPAREN i1= instruction ELSE i2= instruction
    { {insCont= InsIfElse (e,i1,i2); insLoc= $startpos, $endpos} }
-| WHILE LPAREN e= expr RPAREN i= instruction 
+| WHILE LPAREN e= expr RPAREN i= instruction
    { {insCont= InsWhile (e,i); insLoc= $startpos, $endpos} }
-| FOR LPAREN elist1= separated_list(COMMA, expr) SEMICOLON e2= expr? 
-   SEMICOLON elist3= separated_list(COMMA, expr) RPAREN i= instruction 
+| FOR LPAREN elist1= separated_list(COMMA, expr) SEMICOLON e2= expr?
+   SEMICOLON elist3= separated_list(COMMA, expr) RPAREN i= instruction
    { {insCont= InsFor (elist1, e2, elist3, i); insLoc= $startpos, $endpos} }
 | b= bloc { {insCont= InsBloc b; insLoc= $startpos, $endpos} }
-| COUT elist= preceded(DLT, separated_nonempty_list(DLT, expr_str)) SEMICOLON 
+| COUT elist= preceded(DLT, separated_nonempty_list(DLT, expr_str)) SEMICOLON
    { {insCont= InsCout (elist); insLoc= $startpos, $endpos} }
-| RETURN e= expr? SEMICOLON 
+| RETURN e= expr? SEMICOLON
    { {insCont= InsReturn e; insLoc= $startpos, $endpos} }
 ;
  
-expr_str: 
+expr_str:
 | e= expr {ExprStrExpr e}
 | s= STRING {ExprStrStr s}
-| ENDL {ExprStrStr "\n"} 
-(*Il me semble que endl n'est pas un simple retour à la ligne en C++, 
+| ENDL {ExprStrStr "\n"}
+(*Il me semble que endl n'est pas un simple retour à la ligne en C++,
 idéalement il faudrait refaire l'arbre de syntaxe abstraite (ExprStrEndl ?),
 mais vu que c'est pas dans le sujet, on s'en contentera pour l'instant.*)
 ;

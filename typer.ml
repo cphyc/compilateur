@@ -1,6 +1,6 @@
 (* TODO : récupérer la position dans l'erreur *)
 exception Error of string
-open Ast
+open Tast
 
 (* On créée un dictionnaire associant à chaque variable son type *)
 module Smap = Map.Make(String)
@@ -8,73 +8,73 @@ type env = typ Smap.t
 
 (* Simple fonction effectuant la conversion entre Ast et Tast *)
 let rec typConverter = function
-  | TypVoid -> Tast.TypVoid
-  | TypInt -> Tast.TypInt
-  | TypIdent s -> Tast.TypIdent s
+  | Ast.TypVoid -> TypVoid
+  | Ast.TypInt -> TypInt
+  | Ast.TypIdent s -> TypIdent s
 
 let rec qidentTyper = function
-  | Ident s -> Tast.Ident s
-  | IdentIdent (s1, s2) -> assert false
+  | Ast.Ident s -> Ident s
+  | Ast.IdentIdent (s1, s2) -> assert false
 
 let rec qvarTyper = function
-  | QvarQident qident -> Tast.QvarQident (qidentTyper qident)
-  | QvarPointer qvar -> assert false
-    (* Tast.QvarPointer (qvarTyper qvar) *)
-  | QvarReference qvar -> assert false
-    (* Tast.QvarReference (qvarTyper qvar) *)
+  | Ast.QvarQident qident -> QvarQident (qidentTyper qident)
+  | Ast.QvarPointer qvar -> assert false
+    (* QvarPointer (qvarTyper qvar) *)
+  | Ast.QvarReference qvar -> assert false
+    (* QvarReference (qvarTyper qvar) *)
 
 let protoVarTTyper = function
-  | Qvar (typ, qvar) -> Tast.Qvar (typConverter typ.typCont, qvarTyper qvar.qvarCont)
-  | Tident s -> assert false
-  | TidentTident (s1, s2) -> assert false
+  | Ast.Qvar (typ, qvar) -> Qvar (typConverter typ.Ast.typCont, qvarTyper qvar.Ast.qvarCont)
+  | Ast.Tident s -> assert false
+  | Ast.TidentTident (s1, s2) -> assert false
 
 (* let varTyper v = assert false *)
 
 let argumentTyper arg = assert false
 (*   { *)
-(*     Tast.argumentTyp = typConverter arg.Ast.argumentTyp; *)
-(*     Tast.argumentVar = varTyper arg.Ast.argumentVar; *)
-(*     Tast.argumentLoc = arg.Ast.argumentLoc *)
+(*     argumentTyp = typConverter arg.Ast.argumentTyp; *)
+(*     argumentVar = varTyper arg.Ast.argumentVar; *)
+(*     argumentLoc = arg.Ast.argumentLoc *)
 (*   } *)
 
 (* let protoTyper proto =  *)
 (*   { *)
-(*     Tast.protoVar = protoVarTTyper proto.Ast.protoVar; *)
-(*     Tast.argumentList = List.map argumentTyper proto.Ast.argumentList; *)
-(*     Tast.protoLoc = proto.Ast.protoLoc  *)
+(*     protoVar = protoVarTTyper proto.Ast.protoVar; *)
+(*     argumentList = List.map argumentTyper proto.Ast.argumentList; *)
+(*     protoLoc = proto.Ast.protoLoc  *)
 (*   } *)
 (* (\* t est un type, v une variable.*\) *)
 (* let rec declVarTyper t v = match v.Ast.varCont with *)
 (*   | Ast.VarIdent s ->  *)
 (*     { *)
-(*       Tast.varTyp = { Tast.typCont = ( *)
+(*       varTyp = { typCont = ( *)
 (* 	match t.Ast.typCont with *)
-(* 	| Ast.TypVoid -> Tast.TypVoid *)
-(* 	| Ast.TypInt -> Tast.TypInt *)
-(* 	| Ast.TypIdent st -> Tast.TypIdent st ) ;  *)
-(* 		     Tast.typLoc = t.Ast.typLoc }; *)
-(*       Tast.varIdent = s; *)
-(*       Tast.varRef = false;  *)
-(*       Tast.varLoc = v.Ast.varLoc *)
+(* 	| Ast.TypVoid -> TypVoid *)
+(* 	| Ast.TypInt -> TypInt *)
+(* 	| Ast.TypIdent st -> TypIdent st ) ;  *)
+(* 		     typLoc = t.Ast.typLoc }; *)
+(*       varIdent = s; *)
+(*       varRef = false;  *)
+(*       varLoc = v.Ast.varLoc *)
 (*     } *)
 (*   | Ast.VarPointer p ->  *)
 (*     let a = declVarTyper t p in *)
 (*     { *)
-(*       Tast.varTyp = { Tast.typCont = Tast.TypPointer a.Tast.varTyp; *)
-(* 		     Tast.typLoc = a.Tast.varTyp.Tast.typLoc }; *)
-(*       Tast.varIdent = a.Tast.varIdent; *)
-(*       Tast.varRef = a.Tast.varRef; *)
-(*       Tast.varLoc = a.Tast.varLoc *)
+(*       varTyp = { typCont = TypPointer a.varTyp; *)
+(* 		     typLoc = a.varTyp.typLoc }; *)
+(*       varIdent = a.varIdent; *)
+(*       varRef = a.varRef; *)
+(*       varLoc = a.varLoc *)
 (*     } *)
 (*   | Ast.VarReference r ->  *)
 (*     let a = declVarTyper t r in *)
-(*     match a.Tast.varTyp.Tast.typCont with *)
-(*     | Tast.TypIdent _ -> *)
-(*       if a.Tast.varRef then raise (Error "Double reference") else *)
+(*     match a.varTyp.typCont with *)
+(*     | TypIdent _ -> *)
+(*       if a.varRef then raise (Error "Double reference") else *)
 (*       { *)
-(* 	Tast.varTyp = a.Tast.varTyp; *)
-(* 	Tast.varIdent = a.Tast.varIdent; Tast.varRef = true; *)
-(* 	Tast.varLoc = a.Tast.varLoc *)
+(* 	varTyp = a.varTyp; *)
+(* 	varIdent = a.varIdent; varRef = true; *)
+(* 	varLoc = a.varLoc *)
 (*       } *)
 (*     | _ -> raise (Error "Type mal forme") *)
 
@@ -83,88 +83,88 @@ let argumentTyper arg = assert false
 (*   List.map (declVarTyper t) vlist *)
 
 let rec exprTyper e = match e.Ast.exprCont with
-  | ExprInt i -> Tast.ExprInt i
-  | This -> assert false
-  | False -> assert false
-  | True -> assert false
-  | Null -> Tast.Null
-  | ExprQident q -> assert false
-  | ExprStar e -> assert false
-  | ExprDot (e, s) -> assert false
-  | ExprArrow (e, s) -> assert false
-  | ExprEqual (e1, e2) -> assert false
-  | ExprApply (e, el) -> assert false
-  | ExprNew (s, el) -> assert false
-  | ExprLIncr e -> assert false
-  | ExprLDecr e -> assert false
-  | ExprRIncr e -> assert false
-  | ExprRDecr e -> assert false
-  | ExprAmpersand e -> assert false
-  | ExprExclamation e -> assert false
-  | ExprMinus e -> assert false
-  | ExprPlus e -> assert false
-  | ExprOp (e1, op, e2) -> assert false
-  | ExprParenthesis e -> 
-    Tast.ExprParenthesis (exprTyper e)
+  | Ast.ExprInt i -> ExprInt i
+  | Ast.This -> assert false
+  | Ast.False -> assert false
+  | Ast.True -> assert false
+  | Ast.Null -> Null
+  | Ast.ExprQident q -> assert false
+  | Ast.ExprStar e -> assert false
+  | Ast.ExprDot (e, s) -> assert false
+  | Ast.ExprArrow (e, s) -> assert false
+  | Ast.ExprEqual (e1, e2) -> assert false
+  | Ast.ExprApply (e, el) -> assert false
+  | Ast.ExprNew (s, el) -> assert false
+  | Ast.ExprLIncr e -> assert false
+  | Ast.ExprLDecr e -> assert false
+  | Ast.ExprRIncr e -> assert false
+  | Ast.ExprRDecr e -> assert false
+  | Ast.ExprAmpersand e -> assert false
+  | Ast.ExprExclamation e -> assert false
+  | Ast.ExprMinus e -> assert false
+  | Ast.ExprPlus e -> assert false
+  | Ast.ExprOp (e1, op, e2) -> assert false
+  | Ast.ExprParenthesis e -> 
+    ExprParenthesis (exprTyper e)
 
 let expr_strTyper = function
-  | ExprStrExpr e -> Tast.ExprStrExpr (exprTyper e)
-  | ExprStrStr s -> Tast.ExprStrStr s
+  | Ast.ExprStrExpr e -> ExprStrExpr (exprTyper e)
+  | Ast.ExprStrStr s -> ExprStrStr s
 
 let insTyper ins = match ins.Ast.insCont with
-  | InsSemicolon -> assert false
-  | InsExpr e -> assert false
-  | InsDef (typ, var, insDef) -> assert false
-  | InsIf (e, ins) -> assert false
-  | InsIfElse (e, i1, i2) -> assert false
-  | InsWhile (e, i) -> assert false
-  | InsFor (el1, eopt, el2, i) -> assert false
-  | InsBloc b -> assert false
-  | InsCout s -> 
-    Tast.InsCout (List.map expr_strTyper s)
-  | InsReturn eopt -> assert false
+  | Ast.InsSemicolon -> assert false
+  | Ast.InsExpr e -> assert false
+  | Ast.InsDef (typ, var, insDef) -> assert false
+  | Ast.InsIf (e, ins) -> assert false
+  | Ast.InsIfElse (e, i1, i2) -> assert false
+  | Ast.InsWhile (e, i) -> assert false
+  | Ast.InsFor (el1, eopt, el2, i) -> assert false
+  | Ast.InsBloc b -> assert false
+  | Ast.InsCout s -> 
+    InsCout (List.map expr_strTyper s)
+  | Ast.InsReturn eopt -> assert false
 
 (* t est un type, d une déclaration.*)
 let declTyper = function
   | Ast.DeclVars v -> assert false
-    (* Tast.DeclVars *)
+    (* DeclVars *)
     (*   { *)
-    (* 	Tast.varList = declVarsTyper v.Ast.declVarsTyp v.Ast.varList ; *)
-    (* 	Tast.declVarsLoc = v.Ast.declVarsLoc *)
+    (* 	varList = declVarsTyper v.Ast.declVarsTyp v.Ast.varList ; *)
+    (* 	declVarsLoc = v.Ast.declVarsLoc *)
     (*   } *)
   | Ast.DeclClass c -> assert false
-    (* Tast.DeclClass *)
+    (* DeclClass *)
     (*   { *)
-    (* 	Tast.className = c.Ast.className; *)
-    (* 	Tast.supersOpt = c.Ast.supersOpt; *)
+    (* 	className = c.Ast.className; *)
+    (* 	supersOpt = c.Ast.supersOpt; *)
     (* 	(\* On a une member list, on la décore avec les types. On traite les *)
     (* 	   différents cas en fonction du type de member qu'on a. *\) *)
-    (* 	Tast.memberList = List.map *)
+    (* 	memberList = List.map *)
     (* 	  (fun member -> match member with *)
     (* 	  | MemberDeclVars dv -> *)
     (* 	    (\* On décore l'arbre avec les types, puis on reconstruit *\) *)
     (* 	    let vList = declVarsTyper dv.Ast.declVarsTyp dv.Ast.varList in *)
-    (* 	    Tast.MemberDeclVars *)
+    (* 	    MemberDeclVars *)
     (* 	      { varList = vList; declVarsLoc = dv.Ast.declVarsLoc } *)
     (* 	  | VirtualProto (virt, proto) -> *)
-    (* 	    Tast.VirtualProto (virt, protoTyper proto) *)
+    (* 	    VirtualProto (virt, protoTyper proto) *)
 	    
     (* 	  ) c.Ast.memberList; *)
-    (* 	Tast.declClassLoc = c.Ast.declClassLoc; *)
+    (* 	declClassLoc = c.Ast.declClassLoc; *)
     (*   } *)
   | Ast.ProtoBloc (p, b) -> 
     (* On type le prototype puis on analyse le bloc *)
-    Tast.ProtoBloc 
+    ProtoBloc 
       ( {
-	  Tast.protoVar = protoVarTTyper p.Ast.protoVar ;
-	  Tast.argumentList = List.map argumentTyper p.Ast.argumentList;
+	  protoVar = protoVarTTyper p.Ast.protoVar ;
+	  argumentList = List.map argumentTyper p.Ast.argumentList;
         },
 	List.map insTyper b.Ast.blocCont;
       )
 
 let file f = 
   {
-    Tast.iostr = f.Ast.iostr;
-    Tast.fichierDecl = List.map declTyper f.Ast.fichierDecl;
+    iostr = f.Ast.iostr;
+    fichierDecl = List.map declTyper f.Ast.fichierDecl;
   }
    

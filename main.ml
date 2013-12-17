@@ -1,6 +1,6 @@
 (* Fichier Principal du compilateur de C++ *)
-
 open Format
+open Compile
 
 (* Option de compilation, pour s'arrêter à l'issue du parser *)
 let parse_only = ref false
@@ -53,7 +53,11 @@ let () =
   try
     let tree = Parser.file Lexer.token buf in
     close_in f;
-    let _ = Typer.file tree in
+    let code = Compile.compile tree in
+    let f = open_out "out" in
+    let fmt = formatter_of_out_channel f in
+    Mips.print_program fmt code;
+    fprintf fmt "@?";
     ();
   with 
   | Lexer.Lexing_error c ->

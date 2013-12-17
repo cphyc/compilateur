@@ -1,9 +1,9 @@
-CMO=tokens.cmo lexer.cmo parser.cmo typer.cmo main.cmo
+CMO=tokens.cmo lexer.cmo parser.cmo typer.cmo mips.cmo compile.cmo main.cmo 
 COMPILER = ocamlc
 LEXER = ocamllex
 PARSER = menhir
 PARSER-OPTS = 
-GENERATED = tokens.ml tokens.mli lexer.ml parser.ml parser.mli
+GENERATED = tokens.ml tokens.mli lexer.ml parser.ml parser.mli 
 BIN=minic++
 FLAGS=
 
@@ -13,7 +13,7 @@ all: $(BIN)
 $(BIN):$(CMO)
 	$(COMPILER) $(FLAGS) -o $(BIN) $(CMO)
 
-.SUFFIXES: .mli .ml .cmi .cmo .mll .mly  
+.SUFFIXES: .mli .ml .cmi .cmo .mll .mly
 
 .mli.cmi:
 	$(COMPILER) -annot $(FLAGS) -c  $<
