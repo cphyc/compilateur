@@ -6,6 +6,7 @@ PARSER-OPTS =
 GENERATED = tokens.ml tokens.mli lexer.ml parser.ml parser.mli 
 BIN=minic++
 FLAGS=
+MARS=java -jar /opt/mars/Mars.jar
 
 all: $(BIN)
 	@echo ''Compilation réussie.''
@@ -38,5 +39,9 @@ clean:
 .depend depend:$(GENERATED)
 	rm -f .depend
 	ocamldep *.ml *.mli > .depend
+
+test: $(BIN) 
+	./$(BIN) test.cpp
+	$(MARS) test.s | tail -n +3
 
 include .depend
