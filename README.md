@@ -3,12 +3,12 @@ Mini C++
 State of the art
 ==========
 
-Le compilateur permet pour le moment de compiler (sans créer le code) :
+Le compilateur permet pour le moment de compiler :
 
-
-    int maint () {
-    	cout << 42 ;
-    }
+#include <iostream>
+int main () {
+  std::cout << 42 ;
+}
 
 
 Dépendances
