@@ -32,6 +32,20 @@ let protoVarTTyper = function
 
 let argumentTyper arg = assert false
 
+let opTyper o = match o.Ast.opCont with 
+| Ast.OpEqual -> OpEqual
+| Ast.OpDiff -> OpDiff
+| Ast.OpLesser -> OpLesser
+| Ast.OpLesserEqual -> OpLesserEqual
+| Ast.OpGreater -> OpGreater
+| Ast.OpGreaterEqual -> OpGreaterEqual
+| Ast.OpPlus -> OpPlus
+| Ast.OpMinus -> OpMinus
+| Ast.OpTimes -> OpTimes
+| Ast.OpDivide -> OpDivide
+| Ast.OpModulo -> OpModulo
+| Ast.OpAnd -> OpAnd
+| Ast.OpOr -> OpOr
 
 let rec exprTyper e = match e.Ast.exprCont with
   | Ast.ExprInt i -> ExprInt i
@@ -54,7 +68,7 @@ let rec exprTyper e = match e.Ast.exprCont with
   | Ast.ExprExclamation e -> assert false
   | Ast.ExprMinus e -> assert false
   | Ast.ExprPlus e -> assert false
-  | Ast.ExprOp (e1, op, e2) -> assert false
+  | Ast.ExprOp (e1, o, e2) -> ExprOp (exprTyper e1, opTyper o, exprTyper e2)
   | Ast.ExprParenthesis e -> 
     ExprParenthesis (exprTyper e)
 

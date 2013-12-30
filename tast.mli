@@ -73,7 +73,7 @@ and expr =
 | ExprOp of expr * op * expr
 | ExprParenthesis of expr
 
-and op = 
+and op =
 | OpEqual
 | OpDiff
 | OpLesser

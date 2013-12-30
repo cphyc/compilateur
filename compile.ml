@@ -4,6 +4,7 @@ open Mips
 open Tast
 
 let rec compile_expr = function
+(* Compile l'expression et place le résultat au sommet de la pile *)
 | ExprInt i -> li a0 i ++ push a0
 | This -> assert false
 | False -> assert false
@@ -33,7 +34,10 @@ let rec compile_expr = function
     | OpLesserEqual -> assert false
     | OpGreater -> assert false
     | OpGreaterEqual -> assert false
-    | OpPlus -> ce1 ++ move a0 a1 ++ ce2 ++ add a0 a0 oreg a1
+    | OpPlus -> 
+      (* On calcule e1, le résultat est placé en sommet de pile, de meme pour e2
+	 puis on les récupère, les additionne et les empile *)
+      ce1 ++ ce2 ++ pop a1 ++ pop a0 ++ add a0 a0 oreg a1 ++ push a0
     | OpMinus -> assert false
     | OpTimes -> assert false
     | OpDivide -> assert false
