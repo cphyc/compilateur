@@ -24,7 +24,24 @@ let rec compile_expr = function
 | ExprExclamation e -> assert false
 | ExprMinus e -> assert false
 | ExprPlus e -> assert false
-| ExprOp (e1,o,e2) -> assert false
+| ExprOp (e1,o,e2) -> 
+  let ce1, ce2 = compile_expr e1, compile_expr e2 in
+  let op = match o with
+    | OpEqual -> assert false
+    | OpDiff -> assert false
+    | OpLesser -> assert false
+    | OpLesserEqual -> assert false
+    | OpGreater -> assert false
+    | OpGreaterEqual -> assert false
+    | OpPlus -> ce1 ++ move a0 a1 ++ ce2 ++ add a0 a0 oreg a1
+    | OpMinus -> assert false
+    | OpTimes -> assert false
+    | OpDivide -> assert false
+    | OpModulo -> assert false
+    | OpAnd -> assert false
+    | OpOr -> assert false
+  in
+  op
 | ExprParenthesis e -> assert false
 
 
@@ -40,7 +57,7 @@ let compile_ins code = function
   | InsCout l -> 
     let aux code = function
       |ExprStrExpr e -> 
-	let newcode = popn (-4) ++ (compile_expr e) ++ pop a0 ++ popn 4 
+	let newcode = (compile_expr e) ++ pop a0 
 	  ++ jal "print_int"
 	in
 	code ++ newcode
