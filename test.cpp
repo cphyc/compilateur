@@ -1,4 +1,4 @@
 #include <iostream>
 int main () {
-  std::cout << 30 + 12 ;
+  std::cout << 0 || 2;
 }

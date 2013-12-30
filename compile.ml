@@ -8,6 +8,11 @@ let (genv : (string, unit) Hashtbl.t) = Hashtbl.create 17
 module SMap = Set.Make(String)
 let stringMap = ref SMap.empty
 
+(*compteur pour de belles étiquettes*)
+let labelint = ref 0
+let new_label () = labelint := !labelint + 1; 
+  "label_"^(string_of_int (!labelint))
+
 let rec compile_expr = function
 (* Compile l'expression et place le résultat au sommet de la pile *)
 | ExprInt i -> li a0 i ++ push a0
@@ -34,21 +39,32 @@ let rec compile_expr = function
   begin
     let ce1, ce2 = compile_expr e1, compile_expr e2 in
     let calc = ce1 ++ ce2 ++ pop a1 ++ pop a0 in
-    let basop operator = calc ++ (operator a0 a0 oreg a1) ++ push a0 in
+    let comp_op operator = calc ++ (operator a0 a0 a1) ++ push a0 in
+    let arith_op operator = calc ++ (operator a0 a0 oreg a1) ++ push a0 in
     match o with
-    | OpEqual -> assert false
-    | OpDiff -> assert false
-    | OpLesser -> assert false
-    | OpLesserEqual -> assert false
-    | OpGreater -> assert false
-    | OpGreaterEqual -> assert false
-    | OpPlus -> basop add
-    | OpMinus -> basop sub
-    | OpTimes -> basop mul
-    | OpDivide -> basop div (*TODO : traiter le cas où e2 est nul*)
-    | OpModulo -> basop rem (*TODO : ^*)
-    | OpAnd -> assert false
-    | OpOr -> assert false
+    | OpEqual -> comp_op seq
+    | OpDiff -> comp_op sne
+    | OpLesser -> comp_op slt
+    | OpLesserEqual -> comp_op sle
+    | OpGreater -> comp_op sgt
+    | OpGreaterEqual -> comp_op sge
+    | OpPlus -> arith_op add
+    | OpMinus -> arith_op sub
+    | OpTimes -> arith_op mul
+    | OpDivide -> arith_op div (*TODO : traiter le cas où e2 est nul -> pas sûr que ce soit nécessaire*)
+    | OpModulo -> arith_op rem (*TODO : ^*)
+    | OpAnd -> (*Paresseux*)
+      let label1, label2 = new_label (), new_label () in
+      ce1 ++ pop a0 ++ beqz a0 label1 
+      ++ ce2 ++ pop a0 ++ beqz a0 label1
+      ++ li a0 1 ++ push a0 ++ b label2 ++ label label1 
+      ++ push zero ++ label label2
+    | OpOr -> 
+      let label1, label2 = new_label (), new_label () in
+      ce1 ++ pop a0 ++ bnez a0 label1 
+      ++ ce2 ++ pop a0 ++ bnez a0 label1
+      ++ push zero ++ b label2 ++ label label1 
+      ++ li a0 1 ++ push a0 ++ label label2
   end
 | ExprParenthesis e -> compile_expr e
 
