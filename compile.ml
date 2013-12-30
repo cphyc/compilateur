@@ -13,7 +13,7 @@ let labelint = ref 0
 let new_label () = labelint := !labelint + 1; 
   "label_"^(string_of_int (!labelint))
 
-let rec compile_expr = function
+let rec compile_expr ex = match ex.exprCont with
 (* Compile l'expression et place le résultat au sommet de la pile *)
 | ExprInt i -> li a0 i ++ push a0
 | This -> assert false

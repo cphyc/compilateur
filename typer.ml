@@ -4,7 +4,7 @@ open Tast
 
 (* On créée un dictionnaire associant à chaque variable son type *)
 module Smap = Map.Make(String)
-type env = typ Smap.t
+let genv = Smap.empty
 
 (* Simple fonction effectuant la conversion entre Ast et Tast *)
 let rec typConverter = function
@@ -47,47 +47,89 @@ let opTyper o = match o.Ast.opCont with
 | Ast.OpAnd -> OpAnd
 | Ast.OpOr -> OpOr
 
-let rec exprTyper e = match e.Ast.exprCont with
-  | Ast.ExprInt i -> ExprInt i
+let rec exprTyper env exp = match exp.Ast.exprCont with
+  | Ast.ExprInt i -> {exprTyp=TypInt; exprCont= ExprInt i}
   | Ast.This -> assert false
-  | Ast.False -> assert false
-  | Ast.True -> assert false
-  | Ast.Null -> Null
-  | Ast.ExprQident q -> assert false
-  | Ast.ExprStar e -> assert false
-  | Ast.ExprDot (e, s) -> assert false
-  | Ast.ExprArrow (e, s) -> assert false
+  | Ast.False -> assert false (* Sucre syntaxique à virer *)
+  | Ast.True -> assert false (* Sucre syntaxique à virer *)
+  | Ast.Null -> {exprTyp=TypNull; exprCont=Null}
+  | Ast.ExprArrow (e, s) -> assert false (* Sucre syntaxique à virer *)
   | Ast.ExprEqual (e1, e2) -> assert false
   | Ast.ExprApply (e, el) -> assert false
   | Ast.ExprNew (s, el) -> assert false
-  | Ast.ExprLIncr e -> assert false
-  | Ast.ExprLDecr e -> assert false
-  | Ast.ExprRIncr e -> assert false
-  | Ast.ExprRDecr e -> assert false
+  | Ast.ExprLIncr e -> 
+    let ne = exprLVTyper env e in
+    begin match ne.exprTyp with
+    | TypInt -> {exprTyp=TypInt; exprCont= ExprLIncr ne}
+    | _ -> raise (Error "Pas une valeur gauche")
+    end
+  | Ast.ExprLDecr e -> 
+    let ne = exprLVTyper env e in
+    begin match ne.exprTyp with
+    | TypInt -> {exprTyp=TypInt; exprCont= ExprLDecr ne}
+    | _ -> raise (Error "Pas une valeur gauche")
+    end
+  | Ast.ExprRIncr e -> 
+    let ne = exprLVTyper env e in
+    begin match ne.exprTyp with
+    | TypInt -> {exprTyp=TypInt; exprCont= ExprRIncr ne}
+    | _ -> raise (Error "Pas une valeur gauche")
+    end
+  | Ast.ExprRDecr e ->
+    let ne = exprLVTyper env e in
+    begin match ne.exprTyp with
+    | TypInt -> {exprTyp=TypInt; exprCont= ExprRDecr ne}
+    | _ -> raise (Error "Pas une valeur gauche")
+    end
   | Ast.ExprAmpersand e -> assert false
   | Ast.ExprExclamation e -> assert false
   | Ast.ExprMinus e -> assert false
   | Ast.ExprPlus e -> assert false
-  | Ast.ExprOp (e1, o, e2) -> ExprOp (exprTyper e1, opTyper o, exprTyper e2)
+  | Ast.ExprOp (e1, o, e2) -> 
+    let ne1 = exprTyper env e1 and ne2 = exprTyper env e2 in
+    begin match (ne1.exprTyp, ne2.exprTyp) with
+    | TypInt, TypInt -> 
+      {exprTyp = TypInt; 
+       exprCont = ExprOp (exprTyper env e1, opTyper o, exprTyper env e2)}
+    | _ -> raise (Error "Type int attendu")
+    end
   | Ast.ExprParenthesis e -> 
-    ExprParenthesis (exprTyper e)
+    exprTyper env e
+  | e -> exprLVTyper env exp
 
-let expr_strTyper = function
-  | Ast.ExprStrExpr e -> ExprStrExpr (exprTyper e)
+(* Pour les valeurs gauches *)
+and exprLVTyper env exp = match exp.Ast.exprCont with
+  | Ast.ExprQident q -> assert false
+  | Ast.ExprDot (e, s) -> assert false
+  | Ast.ExprStar e -> 
+    let ne = exprTyper env e in
+    begin match ne.exprTyp with
+    | TypPointer t -> {exprTyp=t; exprCont=ExprStar ne}
+    | _ -> raise (Error "Pas un pointeur")
+    end
+  | _ -> assert false
+
+let expr_strTyper env = function
+  | Ast.ExprStrExpr e -> ExprStrExpr (exprTyper env e)
   | Ast.ExprStrStr s -> ExprStrStr s
 
-let insTyper ins = match ins.Ast.insCont with
-  | Ast.InsSemicolon -> assert false
-  | Ast.InsExpr e -> assert false
-  | Ast.InsDef (typ, var, insDef) -> assert false
-  | Ast.InsIf (e, ins) -> assert false
-  | Ast.InsIfElse (e, i1, i2) -> assert false
-  | Ast.InsWhile (e, i) -> assert false
-  | Ast.InsFor (el1, eopt, el2, i) -> assert false
-  | Ast.InsBloc b -> assert false
-  | Ast.InsCout s -> 
-    InsCout (List.map expr_strTyper s)
-  | Ast.InsReturn eopt -> assert false
+let rec insTyper env = function
+  | [] -> []
+  | ins::insl -> 
+    let  newEnv, tIns =  match ins.Ast.insCont with
+      | Ast.InsSemicolon -> (env, InsSemicolon)
+      | Ast.InsExpr e -> (env, InsExpr (exprTyper env e))
+      | Ast.InsDef (typ, var, insDef) -> assert false
+      | Ast.InsIf (e, ins) -> assert false
+      | Ast.InsIfElse (e, i1, i2) -> assert false
+      | Ast.InsWhile (e, i) -> assert false
+      | Ast.InsFor (el1, eopt, el2, i) -> assert false
+      | Ast.InsBloc b -> assert false
+      | Ast.InsCout s -> 
+	(env, InsCout (List.map (expr_strTyper env) s))
+      | Ast.InsReturn eopt -> assert false
+    in
+    tIns::(insTyper newEnv insl)
 
 (* t est un type, d une déclaration.*)
 let declTyper = function
@@ -96,12 +138,16 @@ let declTyper = function
 
   | Ast.ProtoBloc (p, b) -> 
     (* On type le prototype puis on analyse le bloc *)
+    (*Dans un monde merveilleux, le contexte env renvoie le contexte
+      global ajouté aux types de tous les paramètres, ainsi que this si
+      nécessaire*)
+    let env, argList = argumentTyper p.Ast.argumentList in
     ProtoBloc 
       ( {
 	  protoVar = protoVarTTyper p.Ast.protoVar ;
-	  argumentList = List.map argumentTyper p.Ast.argumentList;
+	  argumentList = argList;
         },
-	List.map insTyper b.Ast.blocCont;
+	insTyper env b.Ast.blocCont;
       )
 
 let file f = 

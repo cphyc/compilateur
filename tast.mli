@@ -49,7 +49,9 @@ and qident =
 | Ident of string
 | IdentIdent of string * string
 
-and expr =
+and expr = {exprTyp: typ; exprCont: exprContT}
+
+and exprContT =
 | ExprInt of int
 | This
 | False
