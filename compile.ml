@@ -1,7 +1,12 @@
-
 open Format
 open Mips
 open Tast
+
+(* Environnement global *)
+let (genv : (string, unit) Hashtbl.t) = Hashtbl.create 17
+(* Ensemble des chaines de caractère *)
+module SMap = Set.Make(String)
+let stringMap = ref SMap.empty
 
 let rec compile_expr = function
 (* Compile l'expression et place le résultat au sommet de la pile *)
@@ -26,11 +31,11 @@ let rec compile_expr = function
 | ExprMinus e -> assert false
 | ExprPlus e -> assert false
 | ExprOp (e1,o,e2) -> 
-  let ce1, ce2 = compile_expr e1, compile_expr e2 in
-  (* code de e1 et e2 placés dans a0 et a1 *)
-  let calc = ce1 ++ ce2 ++ pop a1 ++ pop a0 in
-  let basop operator = calc ++ (operator a0 a0 oreg a1) ++ push a0 in
-  let op = match o with
+  begin
+    let ce1, ce2 = compile_expr e1, compile_expr e2 in
+    let calc = ce1 ++ ce2 ++ pop a1 ++ pop a0 in
+    let basop operator = calc ++ (operator a0 a0 oreg a1) ++ push a0 in
+    match o with
     | OpEqual -> assert false
     | OpDiff -> assert false
     | OpLesser -> assert false
@@ -41,11 +46,10 @@ let rec compile_expr = function
     | OpMinus -> basop sub
     | OpTimes -> basop mul
     | OpDivide -> basop div (*TODO : traiter le cas où e2 est nul*)
-    | OpModulo -> assert false
+    | OpModulo -> basop rem (*TODO : ^*)
     | OpAnd -> assert false
     | OpOr -> assert false
-  in
-  op
+  end
 | ExprParenthesis e -> compile_expr e
 
 
@@ -60,12 +64,14 @@ let compile_ins code = function
   | InsBloc b -> assert false
   | InsCout l -> 
     let aux code = function
-      |ExprStrExpr e -> 
-	let newcode = (compile_expr e) ++ pop a0 
-	  ++ jal "print_int"
-	in
+      | ExprStrExpr e -> 
+	let newcode = 
+	  (compile_expr e) ++ pop a0 ++ jal "print_int"	in
 	code ++ newcode
-      |ExprStrStr s -> assert false
+      | ExprStrStr s -> 
+	stringMap := SMap.add s !stringMap;
+	(* Il faut maintenant l'afficher *)
+	la a0 alab s ++ li v0 4 ++ syscall	
     in
     code ++ (List.fold_left aux nop l)
   | InsReturn e -> assert false
@@ -97,8 +103,9 @@ let compile p ofile =
     ++  jr ra
     ++  codefun;
       data =
+	(* TODO : imprimer tous les string ici *)
 	label "newline"
-      ++  asciiz "\n"
+    ++  asciiz "\n"
     }
   in
   let f = open_out ofile in
