@@ -27,6 +27,9 @@ let rec compile_expr = function
 | ExprPlus e -> assert false
 | ExprOp (e1,o,e2) -> 
   let ce1, ce2 = compile_expr e1, compile_expr e2 in
+  (* code de e1 et e2 placés dans a0 et a1 *)
+  let calc = ce1 ++ ce2 ++ pop a1 ++ pop a0 in
+  let basop operator = calc ++ (operator a0 a0 oreg a1) ++ push a0 in
   let op = match o with
     | OpEqual -> assert false
     | OpDiff -> assert false
@@ -34,19 +37,16 @@ let rec compile_expr = function
     | OpLesserEqual -> assert false
     | OpGreater -> assert false
     | OpGreaterEqual -> assert false
-    | OpPlus -> 
-      (* On calcule e1, le résultat est placé en sommet de pile, de meme pour e2
-	 puis on les récupère, les additionne et les empile *)
-      ce1 ++ ce2 ++ pop a1 ++ pop a0 ++ add a0 a0 oreg a1 ++ push a0
-    | OpMinus -> assert false
-    | OpTimes -> assert false
-    | OpDivide -> assert false
+    | OpPlus -> basop add
+    | OpMinus -> basop sub
+    | OpTimes -> basop mul
+    | OpDivide -> basop div (*TODO : traiter le cas où e2 est nul*)
     | OpModulo -> assert false
     | OpAnd -> assert false
     | OpOr -> assert false
   in
   op
-| ExprParenthesis e -> assert false
+| ExprParenthesis e -> compile_expr e
 
 
 let compile_ins code = function
