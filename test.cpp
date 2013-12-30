@@ -1,4 +1,4 @@
 #include <iostream>
 int main () {
-  std::cout << 42 ;
+  std::cout << 10 << 20 ;
 }
