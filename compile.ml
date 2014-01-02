@@ -8,10 +8,13 @@ let (genv : (string, unit) Hashtbl.t) = Hashtbl.create 17
 module SMap = Set.Make(String)
 let stringMap = ref SMap.empty
 
-(*compteur pour de belles étiquettes*)
+(* compteur pour de belles étiquettes *)
 let labelint = ref 0
 let new_label () = labelint := !labelint + 1; 
-  "label_"^(string_of_int (!labelint))
+  if !labelint = 42 then
+    "label_of_the_answer"
+  else
+    "label_"^(string_of_int (!labelint))
 
 let rec compile_expr ex = match ex.exprCont with
 (* Compile l'expression et place le résultat au sommet de la pile *)
