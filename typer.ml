@@ -28,9 +28,11 @@ let protoVarTTyper = function
   | Ast.Tident s -> assert false
   | Ast.TidentTident (s1, s2) -> assert false
 
-(* let varTyper v = assert false *)
+let varTyper v = assert false
 
-let argumentTyper arg = assert false
+let argumentTyper arg = 
+  { argumentTyp = typConverter arg.Ast.argumentTyp.Ast.typCont;
+    argumentVar = varTyper arg.Ast.argumentVar }
 
 let opTyper o = match o.Ast.opCont with 
 | Ast.OpEqual -> OpEqual
@@ -51,8 +53,8 @@ let rec exprTyper env exp = match exp.Ast.exprCont with
   | Ast.ExprInt i -> {exprTyp=TypInt; exprCont= ExprInt i}
   | Ast.This -> assert false
   | Ast.False -> assert false (* Sucre syntaxique à virer *)
-  | Ast.True -> assert false (* Sucre syntaxique à virer *)
-  | Ast.Null -> {exprTyp=TypNull; exprCont=Null}
+  | Ast.True -> assert false
+  | Ast.Null -> { exprTyp=TypNull; exprCont=Null }
   | Ast.ExprArrow (e, s) -> assert false (* Sucre syntaxique à virer *)
   | Ast.ExprEqual (e1, e2) -> assert false
   | Ast.ExprApply (e, el) -> assert false
@@ -138,9 +140,9 @@ let declTyper = function
 
   | Ast.ProtoBloc (p, b) -> 
     (* On type le prototype puis on analyse le bloc *)
-    (*Dans un monde merveilleux, le contexte env renvoie le contexte
-      global ajouté aux types de tous les paramètres, ainsi que this si
-      nécessaire*)
+    (* Dans un monde merveilleux, le contexte env renvoie le contexte
+       global ajouté aux types de tous les paramètres, ainsi que this si
+       nécessaire*)
     let env, argList = argumentTyper p.Ast.argumentList in
     ProtoBloc 
       ( {
