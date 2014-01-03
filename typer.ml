@@ -27,17 +27,17 @@ let protoVarTTyper = function
   | Ast.Tident s -> assert false
   | Ast.TidentTident (s1, s2) -> assert false
 
-let rec varTyper t v0 = match v0.Ast.varCont with
-  | Ast.VarIdent s -> {varIdent=s; varRef=false; varTyp=typConverter t}
-  | Ast.VarPointer v -> let nv = varTyper t v in
-		    {varIdent=nv.varIdent; varRef=false; 
-		     varTyp=TypPointer nv.varTyp}
-  | Ast.VarReference v -> let nv = varTyper t v in
+let rec varTyper typ v0 = match v0.Ast.varCont with
+  | Ast.VarIdent s -> { varIdent=s; varRef=false; varTyp=typConverter  typ}
+  | Ast.VarPointer v -> let nv = varTyper typ v in
+			{ varIdent=nv.varIdent; varRef=false; 
+			  varTyp=TypPointer nv.varTyp }
+  | Ast.VarReference v -> let nv = varTyper typ v in
 		      if nv.varRef 
 		      then raise (Error("Double référence", v0.Ast.varLoc))
 		      else 
-			{varIdent=nv.varIdent; varRef=true;
-			 varTyp=nv.varTyp}
+			{ varIdent=nv.varIdent; varRef=true;
+			  varTyp=nv.varTyp }
 
 let rec argumentTyper env = function
   | [] -> env, []
@@ -158,11 +158,16 @@ let rec insListTyper env = function
     in
     tIns::(insListTyper newEnv insl)
 
-(* t est un type, d une déclaration.*)
 let declTyper = function
-  | Ast.DeclVars v -> assert false
+  | Ast.DeclVars dv -> 
+    let atyp = dv.Ast.declVarsTyp.Ast.typCont in
+    (* let ttyp = typConverter atyp in *)
+    let vlist = dv.Ast.varList in
+    DeclVars (List.map 
+		(fun var -> (* genv := Smap.add var ttyp !genv; *)
+		  varTyper atyp var) vlist)   
+    
   | Ast.DeclClass c -> assert false
-
   | Ast.ProtoBloc (p, b) -> 
     (* On type le prototype puis on analyse le bloc *)
     (* Dans un monde merveilleux, le contexte env renvoie le contexte
@@ -170,10 +175,9 @@ let declTyper = function
        nécessaire*)
     let env, argList = argumentTyper !genv p.Ast.argumentList in
     ProtoBloc 
-      ( {
-	  protoVar = protoVarTTyper p.Ast.protoVar ;
-	  argumentList = argList;
-        },
+      ( 
+	{ protoVar = protoVarTTyper p.Ast.protoVar ;
+	  argumentList = argList; },
 	insListTyper env b.Ast.blocCont;
       )
 

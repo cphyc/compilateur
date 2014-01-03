@@ -1,4 +1,5 @@
 #include <iostream>
 int main () {
-  std::cout << 0 || 2;
+  int x = 1;
+  std::cout << x;
 }
