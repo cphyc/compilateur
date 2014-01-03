@@ -72,7 +72,7 @@ let rec compile_expr ex = match ex.exprCont with
 | ExprParenthesis e -> compile_expr e
 
 
-let compile_ins code = function
+let rec compile_ins code = function
   | InsSemicolon -> nop (* Faut-il vraiment ne rien faire ? *)
   | InsExpr e -> compile_expr e ++ pop a0
   | InsDef (t,v,d) -> assert false
@@ -80,7 +80,11 @@ let compile_ins code = function
   | InsIfElse (e,i1,i2) -> assert false
   | InsWhile (e,i) -> assert false
   | InsFor (l1,e,l2,i) -> assert false
-  | InsBloc b -> assert false
+  | InsBloc b -> 
+    let aux code' ins =
+      code' ++ compile_ins code ins      
+    in
+    code ++ (List.fold_left aux nop b)
   | InsCout l -> 
     let aux code = function
       | ExprStrExpr e -> 
@@ -92,7 +96,7 @@ let compile_ins code = function
 	let lab = new_label () in
 	stringMap := SMap.add lab s !stringMap;
 	(* Il faut maintenant l'afficher *)
-	la a0 alab lab ++ li v0 4 ++ syscall
+	code ++ la a0 alab lab ++ li v0 4 ++ syscall
     in
     code ++ (List.fold_left aux nop l)
   | InsReturn e -> assert false

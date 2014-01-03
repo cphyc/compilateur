@@ -138,10 +138,10 @@ let expr_strTyper env = function
   | Ast.ExprStrExpr e -> ExprStrExpr (exprTyper env e)
   | Ast.ExprStrStr s -> ExprStrStr s
 
-let rec insTyper env = function
+let rec insListTyper env = function
   | [] -> []
   | ins::insl -> 
-    let  newEnv, tIns =  match ins.Ast.insCont with
+    let newEnv, tIns = match ins.Ast.insCont with
       | Ast.InsSemicolon -> (env, InsSemicolon)
       | Ast.InsExpr e -> (env, InsExpr (exprTyper env e))
       | Ast.InsDef (typ, var, insDef) -> assert false
@@ -149,12 +149,14 @@ let rec insTyper env = function
       | Ast.InsIfElse (e, i1, i2) -> assert false
       | Ast.InsWhile (e, i) -> assert false
       | Ast.InsFor (el1, eopt, el2, i) -> assert false
-      | Ast.InsBloc b -> assert false
+      | Ast.InsBloc b -> 
+	let insList = insListTyper env b.Ast.blocCont in
+	(env, InsBloc insList)
       | Ast.InsCout s -> 
 	(env, InsCout (List.map (expr_strTyper env) s))
       | Ast.InsReturn eopt -> assert false
     in
-    tIns::(insTyper newEnv insl)
+    tIns::(insListTyper newEnv insl)
 
 (* t est un type, d une déclaration.*)
 let declTyper = function
@@ -172,7 +174,7 @@ let declTyper = function
 	  protoVar = protoVarTTyper p.Ast.protoVar ;
 	  argumentList = argList;
         },
-	insTyper env b.Ast.blocCont;
+	insListTyper env b.Ast.blocCont;
       )
 
 let file f = 
