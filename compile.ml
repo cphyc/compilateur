@@ -5,7 +5,7 @@ open Tast
 (* Environnement global *)
 let (genv : (string, unit) Hashtbl.t) = Hashtbl.create 17
 (* Ensemble des chaines de caractère *)
-module SMap = Set.Make(String)
+module SMap = Map.Make(String)
 let stringMap = ref SMap.empty
 
 (* compteur pour de belles étiquettes *)
@@ -73,8 +73,8 @@ let rec compile_expr ex = match ex.exprCont with
 
 
 let compile_ins code = function
-  | InsSemicolon -> assert false
-  | InsExpr e -> assert false
+  | InsSemicolon -> nop (* Faut-il vraiment ne rien faire ? *)
+  | InsExpr e -> compile_expr e ++ pop a0
   | InsDef (t,v,d) -> assert false
   | InsIf (e,i) -> assert false
   | InsIfElse (e,i1,i2) -> assert false
@@ -85,12 +85,14 @@ let compile_ins code = function
     let aux code = function
       | ExprStrExpr e -> 
 	let newcode = 
-	  (compile_expr e) ++ pop a0 ++ jal "print_int"	in
-	code ++ newcode
-      | ExprStrStr s -> 
-	stringMap := SMap.add s !stringMap;
+	  (compile_expr e) ++ pop a0 ++ jal "print_int"	
+	in code ++ newcode
+      | ExprStrStr s ->
+	(* TODO : vérifier qu'on n'a pas déjà stocké le string *)
+	let lab = new_label () in
+	stringMap := SMap.add lab s !stringMap;
 	(* Il faut maintenant l'afficher *)
-	la a0 alab s ++ li v0 4 ++ syscall	
+	la a0 alab lab ++ li v0 4 ++ syscall
     in
     code ++ (List.fold_left aux nop l)
   | InsReturn e -> assert false
@@ -122,8 +124,10 @@ let compile p ofile =
     ++  jr ra
     ++  codefun;
       data =
-	(* TODO : imprimer tous les string ici *)
-	label "newline"
+    	(* TODO : imprimer tous les string ici *)
+	SMap.fold 
+	  (fun lab word data -> data ++ label lab ++ asciiz word) !stringMap nop
+    ++  label "newline"
     ++  asciiz "\n"
     }
   in
