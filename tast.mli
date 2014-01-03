@@ -36,7 +36,7 @@ and typ =
 | TypIdent of string
 | TypPointer of typ
 
-and argument = {argumentTyp: typ; argumentVar: var}
+and argument = var
 
 and var = {varIdent: string; varRef: bool; varTyp: typ}
 

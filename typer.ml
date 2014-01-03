@@ -1,10 +1,9 @@
-(* TODO : récupérer la position dans l'erreur *)
-exception Error of string
+exception Error of string * Ast.loc
 open Tast
 
 (* On créée un dictionnaire associant à chaque variable son type *)
 module Smap = Map.Make(String)
-let genv = Smap.empty
+let genv:(typ Smap.t ref) = ref Smap.empty
 
 (* Simple fonction effectuant la conversion entre Ast et Tast *)
 let rec typConverter = function
@@ -28,11 +27,32 @@ let protoVarTTyper = function
   | Ast.Tident s -> assert false
   | Ast.TidentTident (s1, s2) -> assert false
 
-let varTyper v = assert false
+let rec varTyper t v0 = match v0.Ast.varCont with
+  | Ast.VarIdent s -> {varIdent=s; varRef=false; varTyp=typConverter t}
+  | Ast.VarPointer v -> let nv = varTyper t v in
+		    {varIdent=nv.varIdent; varRef=false; 
+		     varTyp=TypPointer nv.varTyp}
+  | Ast.VarReference v -> let nv = varTyper t v in
+		      if nv.varRef 
+		      then raise (Error("Double référence", v0.Ast.varLoc))
+		      else 
+			{varIdent=nv.varIdent; varRef=true;
+			 varTyp=nv.varTyp}
 
-let argumentTyper arg = 
-  { argumentTyp = typConverter arg.Ast.argumentTyp.Ast.typCont;
-    argumentVar = varTyper arg.Ast.argumentVar }
+let rec argumentTyper env = function
+  | [] -> env, []
+  | arg::alist -> let v = varTyper arg.Ast.argumentTyp.Ast.typCont 
+		    arg.Ast.argumentVar in
+		  let nenv, vlist = (argumentTyper env alist) in
+		  varUnique arg.Ast.argumentLoc v vlist;
+		  (Smap.add v.varIdent v.varTyp nenv), (v::vlist)
+and varUnique loc v0 = function
+  | [] -> ()
+  | v::alist -> if v0.varIdent == v.varIdent then
+      raise (Error ("Variable redondante", loc))
+    else varUnique loc v0 alist
+
+let varTyper v = assert false
 
 let opTyper o = match o.Ast.opCont with 
 | Ast.OpEqual -> OpEqual
@@ -63,28 +83,33 @@ let rec exprTyper env exp = match exp.Ast.exprCont with
     let ne = exprLVTyper env e in
     begin match ne.exprTyp with
     | TypInt -> {exprTyp=TypInt; exprCont= ExprLIncr ne}
-    | _ -> raise (Error "Pas une valeur gauche")
+    | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
     end
   | Ast.ExprLDecr e -> 
     let ne = exprLVTyper env e in
     begin match ne.exprTyp with
     | TypInt -> {exprTyp=TypInt; exprCont= ExprLDecr ne}
-    | _ -> raise (Error "Pas une valeur gauche")
+    | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
     end
   | Ast.ExprRIncr e -> 
     let ne = exprLVTyper env e in
     begin match ne.exprTyp with
     | TypInt -> {exprTyp=TypInt; exprCont= ExprRIncr ne}
-    | _ -> raise (Error "Pas une valeur gauche")
+    | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
     end
   | Ast.ExprRDecr e ->
     let ne = exprLVTyper env e in
     begin match ne.exprTyp with
     | TypInt -> {exprTyp=TypInt; exprCont= ExprRDecr ne}
-    | _ -> raise (Error "Pas une valeur gauche")
+    | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
     end
   | Ast.ExprAmpersand e -> assert false
-  | Ast.ExprExclamation e -> assert false
+  | Ast.ExprExclamation e -> 
+    let ne = exprTyper env e in
+    begin match ne.exprTyp with
+    | TypInt -> {exprTyp=TypInt; exprCont = ExprExclamation ne}
+    | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
+    end
   | Ast.ExprMinus e -> assert false
   | Ast.ExprPlus e -> assert false
   | Ast.ExprOp (e1, o, e2) -> 
@@ -93,7 +118,7 @@ let rec exprTyper env exp = match exp.Ast.exprCont with
     | TypInt, TypInt -> 
       {exprTyp = TypInt; 
        exprCont = ExprOp (exprTyper env e1, opTyper o, exprTyper env e2)}
-    | _ -> raise (Error "Type int attendu")
+    | _ -> raise (Error ("Type int attendu", exp.Ast.exprLoc))
     end
   | Ast.ExprParenthesis e -> 
     exprTyper env e
@@ -107,9 +132,9 @@ and exprLVTyper env exp = match exp.Ast.exprCont with
     let ne = exprTyper env e in
     begin match ne.exprTyp with
     | TypPointer t -> {exprTyp=t; exprCont=ExprStar ne}
-    | _ -> raise (Error "Pas un pointeur")
+    | _ -> raise (Error ("Pas un pointeur", exp.Ast.exprLoc))
     end
-  | _ -> assert false
+  | _ -> raise (Error ("Pas une valeur gauche", exp.Ast.exprLoc))
 
 let expr_strTyper env = function
   | Ast.ExprStrExpr e -> ExprStrExpr (exprTyper env e)
@@ -143,7 +168,7 @@ let declTyper = function
     (* Dans un monde merveilleux, le contexte env renvoie le contexte
        global ajouté aux types de tous les paramètres, ainsi que this si
        nécessaire*)
-    let env, argList = argumentTyper p.Ast.argumentList in
+    let env, argList = argumentTyper !genv p.Ast.argumentList in
     ProtoBloc 
       ( {
 	  protoVar = protoVarTTyper p.Ast.protoVar ;
