@@ -4,6 +4,7 @@ open Compile
 
 (* Option de compilation, pour s'arrêter à l'issue du parser *)
 let parse_only = ref false
+let type_only = ref false
 
 (* Noms des fichiers source et cible *)
 let ifile = ref ""
@@ -13,8 +14,10 @@ let set_file f s = f := s
 
 (* Les options du compilateur que l'on affiche en tapant minic++ --help *)
 let options = 
-  ["-parse-only", Arg.Set parse_only, 
-   "  Pour faire uniquement la phase d'analyse syntaxique"]
+  ["--parse-only", Arg.Set parse_only, 
+   "  Pour faire uniquement la phase d'analyse syntaxique";
+  "--type-only", Arg.Set type_only, 
+   "  Pour faire la phase d'analyse syntaxique et lexicale"]
 
 let usage = "usage: minic++ [option] file.c"
 
@@ -53,9 +56,10 @@ let () =
   try
     let tree = Parser.file Lexer.token buf in
     close_in f;
-    let tree = Typer.file tree in
-    Compile.compile tree 
-      ((Filename.chop_suffix !ifile ".cpp")^".s");
+    if (not !parse_only) then 
+	let tree = Typer.file tree in ();
+	if (not !type_only) then
+	  Compile.compile tree ((Filename.chop_suffix !ifile ".cpp")^".s");
   with 
   | Lexer.Lexing_error c ->
       (* Erreur lexicale. On récupère sa position absolue et 
@@ -68,4 +72,8 @@ let () =
 	 convertit en numéro de ligne *)
     localisation ((Lexing.lexeme_start_p buf), (Lexing.lexeme_end_p buf));
     eprintf "Erreur dans l'analyse syntaxique@.";
+    exit 1
+  | Typer.Error (c,loc) ->
+    localisation loc;
+    eprintf "Erreur de type: %s@." c;
     exit 1
