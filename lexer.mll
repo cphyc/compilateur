@@ -31,17 +31,17 @@ let octal_digit = ['0'-'7']
 let hexa_digit = ['0'-'9' 'a'-'f' 'A'-'F']
 let integer = '0' | ['1'-'9'] digit* | '0' octal_digit+ | "0x" hexa_digit+
 (* Il faut enlever le '\' et le '"' *)
-let carac = ['\032'-'\033' '\035'-'\038' '\040'-'\091'
+let carac = ['\032'-'\033' '\035'-'\091'
   '\093'-'\127'] | "\\\\" | "\\\"" | "\\\'"
   |"\\x" hexa_digit hexa_digit
   |"\\n" |"\\t"
-let string = '\"' carac* '\"'
+let string = "\"" carac* "\""
 let space = [' ' '\t']
 
 rule token = parse
   | "#include <iostream>" { IOSTREAM }
   | "std::cout" { COUT }
-  | "std::endl" {ENDL}
+  | "std::endl" { ENDL }
   | "\n" { Lexing.new_line lexbuf; token lexbuf }
   | space+ { token lexbuf }
   | string as s { STRING (String.sub s 1 (String.length s - 1)) }
