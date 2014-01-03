@@ -52,8 +52,6 @@ and varUnique loc v0 = function
       raise (Error ("Variable redondante", loc))
     else varUnique loc v0 alist
 
-let varTyper v = assert false
-
 let opTyper o = match o.Ast.opCont with 
 | Ast.OpEqual -> OpEqual
 | Ast.OpDiff -> OpDiff
