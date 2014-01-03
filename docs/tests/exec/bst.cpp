@@ -74,7 +74,7 @@ void BST::add2(int x) {
 
 void BST::print() {
   tree_print(this->root);
-  std::cout << std::endl;
+  std::cout << "\n";
 }
 
 

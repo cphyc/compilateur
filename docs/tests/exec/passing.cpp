@@ -6,8 +6,8 @@ void incr(int &y) {
 
 int main() {
   int x = 5;
-  std::cout << "x = " << x << std::endl;
+  std::cout << "x = " << x << "\n";
   incr(x);
-  std::cout << "x = " << x << std::endl;
+  std::cout << "x = " << x << "\n";
 }
 

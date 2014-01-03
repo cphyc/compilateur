@@ -1,2 +1,2 @@
 
-int main() { char *p; p+p; }
+int main() { int *p; p+p; }

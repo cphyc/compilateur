@@ -1,6 +1,5 @@
 #include <iostream>
-int main() {
-  int *s;
-  s = NULL;
-}
 
+int main() {
+  std::cout << "hello world\n";
+}
