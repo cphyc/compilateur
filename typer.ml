@@ -128,7 +128,11 @@ let rec exprTyper env exp = match exp.Ast.exprCont with
 
 (* Pour les valeurs gauches *)
 and exprLVTyper env exp = match exp.Ast.exprCont with
-  | Ast.ExprQident q -> assert false
+  | Ast.ExprQident Ast.Ident s ->
+    (* On a un identificateur, on cherche son type dans l'env *)
+    let ttyp = Smap.find s env in
+    {exprTyp = ttyp; exprCont = ExprQident (Ident s)}
+  | Ast.ExprQident Ast.IdentIdent (s1, s2) -> assert false
   | Ast.ExprDot (e, s) -> assert false
   | Ast.ExprStar e -> 
     let ne = exprTyper env e in
