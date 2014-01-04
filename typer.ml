@@ -1,7 +1,7 @@
 exception Error of string * Ast.loc
 open Tast
 
-(* On créée un dictionnaire associant à chaque variable son type *)
+(* On crée un dictionnaire associant à chaque variable son type *)
 module Smap = Map.Make(String)
 let genv:(typ Smap.t ref) = ref Smap.empty
 
@@ -75,7 +75,7 @@ let rec exprTyper env exp = match exp.Ast.exprCont with
   | Ast.ExprInt i -> { exprTyp=TypInt; exprCont= ExprInt i }
   | Ast.This -> assert false
   | Ast.False -> assert false (* Sucre syntaxique à virer *)
-  | Ast.True -> assert false
+  | Ast.True -> assert false (* Sucre syntaxique à virer *)
   | Ast.Null -> { exprTyp=TypNull; exprCont=Null }
   | Ast.ExprArrow (e, s) -> assert false (* Sucre syntaxique à virer *)
   | Ast.ExprEqual (e1, e2) -> assert false
