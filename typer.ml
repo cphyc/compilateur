@@ -29,23 +29,27 @@ let protoVarTTyper = function
 
 let rec varTyper typ v0 = match v0.Ast.varCont with
   | Ast.VarIdent s -> { varIdent=s; varRef=false; varTyp=typConverter  typ}
-  | Ast.VarPointer v -> let nv = varTyper typ v in
-			{ varIdent=nv.varIdent; varRef=false; 
-			  varTyp=TypPointer nv.varTyp }
-  | Ast.VarReference v -> let nv = varTyper typ v in
-		      if nv.varRef 
-		      then raise (Error("Double référence", v0.Ast.varLoc))
-		      else 
-			{ varIdent=nv.varIdent; varRef=true;
-			  varTyp=nv.varTyp }
+  | Ast.VarPointer v -> 
+    let nv = varTyper typ v in
+    { varIdent=nv.varIdent; varRef=false; 
+      varTyp=TypPointer nv.varTyp }
+  | Ast.VarReference v ->
+    let nv = varTyper typ v in
+    if nv.varRef (* On n'autorise pas les dbl refs *)
+    then raise (Error("Double référence", v0.Ast.varLoc))
+    else 
+      { varIdent=nv.varIdent; varRef=true;
+	varTyp=nv.varTyp }
 
 let rec argumentTyper env = function
   | [] -> env, []
-  | arg::alist -> let v = varTyper arg.Ast.argumentTyp.Ast.typCont 
-		    arg.Ast.argumentVar in
-		  let nenv, vlist = (argumentTyper env alist) in
-		  varUnique arg.Ast.argumentLoc v vlist;
-		  (Smap.add v.varIdent v.varTyp nenv), (v::vlist)
+  | arg::alist -> 
+    let v = varTyper arg.Ast.argumentTyp.Ast.typCont  arg.Ast.argumentVar in
+    let nenv, vlist = (argumentTyper env alist) in
+    varUnique arg.Ast.argumentLoc v vlist;
+    (Smap.add v.varIdent v.varTyp nenv), (v::vlist)
+
+(* Cette fonction verifie qu'on n'a pas redondance de variable *)
 and varUnique loc v0 = function
   | [] -> ()
   | v::alist -> if v0.varIdent == v.varIdent then
@@ -68,7 +72,7 @@ let opTyper o = match o.Ast.opCont with
 | Ast.OpOr -> OpOr
 
 let rec exprTyper env exp = match exp.Ast.exprCont with
-  | Ast.ExprInt i -> {exprTyp=TypInt; exprCont= ExprInt i}
+  | Ast.ExprInt i -> { exprTyp=TypInt; exprCont= ExprInt i }
   | Ast.This -> assert false
   | Ast.False -> assert false (* Sucre syntaxique à virer *)
   | Ast.True -> assert false
@@ -80,13 +84,13 @@ let rec exprTyper env exp = match exp.Ast.exprCont with
   | Ast.ExprLIncr e -> 
     let ne = exprLVTyper env e in
     begin match ne.exprTyp with
-    | TypInt -> {exprTyp=TypInt; exprCont= ExprLIncr ne}
+    | TypInt -> { exprTyp=TypInt; exprCont= ExprLIncr ne }
     | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
     end
   | Ast.ExprLDecr e -> 
     let ne = exprLVTyper env e in
     begin match ne.exprTyp with
-    | TypInt -> {exprTyp=TypInt; exprCont= ExprLDecr ne}
+    | TypInt -> { exprTyp=TypInt; exprCont= ExprLDecr ne }
     | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
     end
   | Ast.ExprRIncr e -> 
@@ -129,7 +133,7 @@ and exprLVTyper env exp = match exp.Ast.exprCont with
   | Ast.ExprStar e -> 
     let ne = exprTyper env e in
     begin match ne.exprTyp with
-    | TypPointer t -> {exprTyp=t; exprCont=ExprStar ne}
+    | TypPointer t -> { exprTyp=t; exprCont=ExprStar ne }
     | _ -> raise (Error ("Pas un pointeur", exp.Ast.exprLoc))
     end
   | _ -> raise (Error ("Pas une valeur gauche", exp.Ast.exprLoc))
@@ -138,13 +142,32 @@ let expr_strTyper env = function
   | Ast.ExprStrExpr e -> ExprStrExpr (exprTyper env e)
   | Ast.ExprStrStr s -> ExprStrStr s
 
+(* Typage des instructions.
+   La fonction type au fur et à mesure les instructions en mettant à jour 
+   l'environnement.
+   sig : env -> Ast.ins list -> Tast.ins *)
 let rec insListTyper env = function
   | [] -> []
   | ins::insl -> 
+    (* Sous fonction qui récupère le nouvel env et l'instruction typée *)
     let newEnv, tIns = match ins.Ast.insCont with
       | Ast.InsSemicolon -> (env, InsSemicolon)
       | Ast.InsExpr e -> (env, InsExpr (exprTyper env e))
-      | Ast.InsDef (typ, var, insDef) -> assert false
+      | Ast.InsDef (typ, var, insDef) ->
+	begin
+	  let ttyp = typConverter typ.Ast.typCont in
+	  let tvar = varTyper typ.Ast.typCont var in
+	  match insDef with
+	  | Some Ast.InsDefExpr e -> 
+	    let te = exprTyper env e in
+	    if te.exprTyp != ttyp then
+	      raise (Error ("Types incompatibles.", ins.Ast.insLoc))
+	    else
+	      (Smap.add tvar.varIdent ttyp env),
+	      InsDef (ttyp, tvar, Some (InsDefExpr te))
+	  | Some Ast.InsDefIdent (s, elist) -> assert false
+	  | None -> ( Smap.add tvar.varIdent ttyp env), InsDef (ttyp, tvar, None) 
+	end
       | Ast.InsIf (e, ins) -> assert false
       | Ast.InsIfElse (e, i1, i2) -> assert false
       | Ast.InsWhile (e, i) -> assert false
