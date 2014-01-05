@@ -31,10 +31,18 @@ let rec allocate_args shift = function
 		SMap.add v.varIdent shift (allocate_args new_shift vlist)
 
 (* Cherche le plus petit offset (% à fp) et empile en dessous. Si vide,
-   on met par défaut - 8 (car on a gardé fp et sp). *)
+   on met par défaut - 8 (car on a sauvé fp et sp). *)
 let allocate_var v lenv = 
-  let _, offset = try SMap.min_binding lenv with Not_found -> "", -8 in
-  SMap.add v.varIdent (offset - sizeof v.varTyp) lenv
+  let _, offset = 
+    try 
+      (* On prend le plus grand offset en val abs parmi les offs négatifs *)
+      SMap.max_binding 
+	(SMap.filter (fun _ off -> if off>=0 then false else true) lenv)
+    with Not_found -> "", -8 in
+  if SMap.mem v.varIdent lenv then 
+    raise (Error "Redéfinition illégale de variable.")
+  else
+    SMap.add v.varIdent (offset - sizeof v.varTyp) lenv
   
 
 let rec compile_expr ex lenv = match ex.exprCont with
@@ -47,9 +55,14 @@ let rec compile_expr ex lenv = match ex.exprCont with
 | ExprQident q -> 
   begin
     match q with 
-    | Ident s -> let offset = SMap.find s lenv in
-		 comment (String.concat " " [" Chargement de la variable";s])
-		 ++ lw a0 areg (offset, fp) ++ push a0      
+    | Ident s -> 
+      let offset = 
+	try SMap.find s lenv 
+	with 
+	  Not_found->raise (Error (String.concat " " ["Variable";s;"non déclarée"]))
+      in
+      comment (String.concat " " [" Chargement de la variable";s])
+      ++ lw a0 areg (offset, fp) ++ push a0      
     | IdentIdent (s1,s2) -> assert false
   end
 | ExprStar e -> assert false
@@ -150,7 +163,8 @@ let rec compile_ins code lenv sp = function
 	code ++ la a0 alab lab ++ li v0 4 ++ syscall, lenv
     in
     let inscode, nlenv = (List.fold_left aux (nop, lenv) l) in
-    code ++ inscode, nlenv
+    let comm = comment " Affichage via cout" in
+    code ++ comm ++ inscode, nlenv
   | InsReturn e -> assert false
 		
 let save_fp_sp = comment " Sauvegarde de fp:" ++ push fp
