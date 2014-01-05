@@ -34,7 +34,7 @@ parser.ml parser.mli: parser.mly
 
 clean:
 	@echo "Suppression des fichiers générés par make."
-	@rm -f *.cm[io] *.o *~ *.annot *.automaton .depend sortie_test $(BIN) $(GENERATED) parser.output
+	@rm -f *.cm[io] *.s *.o *~ *.annot *.automaton .depend sortie_test $(BIN) $(GENERATED) parser.output
 
 .depend depend:$(GENERATED)
 	rm -f .depend
