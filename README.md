@@ -3,12 +3,15 @@ Mini C++
 State of the art
 ==========
 
-Le compilateur permet pour le moment de compiler :
+Le compilateur permet pour le moment de compiler plein de choses comme :
 
 #include <iostream>
 int main () {
-  std::cout << 42 ;
+  int x = 42
+  std::cout << x ;
 }
+
+TODO : utiliser correctement \n et \t
 
 
 Dépendances
