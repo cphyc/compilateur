@@ -74,8 +74,8 @@ let opTyper o = match o.Ast.opCont with
 let rec exprTyper env exp = match exp.Ast.exprCont with
   | Ast.ExprInt i -> { exprTyp=TypInt; exprCont= ExprInt i }
   | Ast.This -> assert false
-  | Ast.False -> assert false (* Sucre syntaxique à virer *)
-  | Ast.True -> assert false (* Sucre syntaxique à virer *)
+  | Ast.False -> { exprTyp=TypInt; exprCont= ExprInt 0}
+  | Ast.True -> { exprTyp=TypInt; exprCont= ExprInt 1}
   | Ast.Null -> { exprTyp=TypNull; exprCont=Null }
   | Ast.ExprArrow (e, s) -> assert false (* Sucre syntaxique à virer *)
   | Ast.ExprEqual (e1, e2) -> assert false

@@ -49,8 +49,6 @@ let rec compile_expr ex lenv = match ex.exprCont with
 (* Compile l'expression et place le résultat au sommet de la pile *)
 | ExprInt i -> li a0 i ++ push a0
 | This -> assert false
-| False -> assert false
-| True -> assert false
 | Null -> assert false
 | ExprQident q -> 
   begin
