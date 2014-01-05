@@ -25,24 +25,33 @@ let rec sizeof = function
 | TypIdent s -> assert false
 | TypPointer t -> sizeof t
 
-(* Méthode générique d'allocation. On alloue dans un sens ou dans l'autre
-   selon que l'on traite une variable ou un argument *)
-let rec generic_allocate op sp = function
+let rec allocate_args shift = function
   | [] -> SMap.empty
-  | v::vlist -> let s = sizeof v.varTyp in
-		let new_sp = op sp (sizeof v.varTyp) in
-		SMap.add v.varIdent (sp, s) (generic_allocate op new_sp vlist)
-let allocate_args = generic_allocate (fun a b -> a + b)
-let allocate_var = generic_allocate (fun a b -> a - b) 
+  | v::vlist -> let new_shift = shift + sizeof v.varTyp in
+		SMap.add v.varIdent shift (allocate_args new_shift vlist)
 
-let rec compile_expr ex = match ex.exprCont with
+(* Cherche le plus petit offset (% à fp) et empile en dessous. Si vide,
+   on met par défaut - 8 (car on a gardé fp et sp). *)
+let allocate_var v lenv = 
+  let _, offset = try SMap.min_binding lenv with Not_found -> "", -8 in
+  SMap.add v.varIdent (offset - sizeof v.varTyp) lenv
+  
+
+let rec compile_expr ex lenv = match ex.exprCont with
 (* Compile l'expression et place le résultat au sommet de la pile *)
 | ExprInt i -> li a0 i ++ push a0
 | This -> assert false
 | False -> assert false
 | True -> assert false
 | Null -> assert false
-| ExprQident e -> assert false
+| ExprQident q -> 
+  begin
+    match q with 
+    | Ident s -> let offset = SMap.find s lenv in
+		 comment (String.concat " " [" Chargement de la variable";s])
+		 ++ lw a0 areg (offset, fp) ++ push a0      
+    | IdentIdent (s1,s2) -> assert false
+  end
 | ExprStar e -> assert false
 | ExprDot (e,s) -> assert false
 | ExprArrow (e,s) -> assert false
@@ -59,7 +68,7 @@ let rec compile_expr ex = match ex.exprCont with
 | ExprPlus e -> assert false
 | ExprOp (e1,o,e2) -> 
   begin
-    let ce1, ce2 = compile_expr e1, compile_expr e2 in
+    let ce1, ce2 = compile_expr e1 lenv, compile_expr e2 lenv in
     let calc = ce1 ++ ce2 ++ pop a1 ++ pop a0 in
     let comp_op operator = calc ++ (operator a0 a0 a1) ++ push a0 in
     let arith_op operator = calc ++ (operator a0 a0 oreg a1) ++ push a0 in
@@ -73,7 +82,8 @@ let rec compile_expr ex = match ex.exprCont with
     | OpPlus -> arith_op add
     | OpMinus -> arith_op sub
     | OpTimes -> arith_op mul
-    | OpDivide -> arith_op div (*TODO : traiter le cas où e2 est nul -> pas sûr que ce soit nécessaire*)
+    | OpDivide -> arith_op div 
+    (* TODO : traiter le cas où e2 est nul -> pas sûr que ce soit nécessaire *)
     | OpModulo -> arith_op rem (*TODO : ^*)
     | OpAnd -> (*Paresseux*)
       let label1, label2 = new_label (), new_label () in
@@ -88,19 +98,32 @@ let rec compile_expr ex = match ex.exprCont with
       ++ push zero ++ b label2 ++ label label1 
       ++ li a0 1 ++ push a0 ++ label label2
   end
-| ExprParenthesis e -> compile_expr e
+| ExprParenthesis e -> compile_expr e lenv
 
+let pushn = sub sp sp oi
 (* sig : code -> lenv -> sp -> code, lenv
-   Renvoie le code completé de celui de l'instruction *)
+   Renvoie le code completé de celui de l'instruction.
+   TODO? : s'arranger pour que les variables locales soient bien en début de pile
+   et pas en dessous de la place utilisée pour les calculs.
+   TODO : etre cohérent et avoir compile_ins qui ne prend pas code en argument.
+*)
 let rec compile_ins code lenv sp = function
-(* Nous sommes dans le meilleur des mondes, tout a été typé correctement.
-   Les déclarations sont ajoutées à l'environnement local. *)
   | InsSemicolon -> code, lenv
-  | InsExpr e -> code ++ compile_expr e, lenv
-  | InsDef (t,v, None) -> (* On ajoute alloue de la place pour la variable *)
+  | InsExpr e -> (* le résultat est placé en sommet de pile *)
+      code ++ compile_expr e lenv, lenv
+  | InsDef (t,v,op) ->
+    let comm = comment 
+      (String.concat " " [" Allocation de la variable";v.varIdent]) in
     let s = sizeof t in
-    code ++ popn s, SMap.add v.varIdent (sp, s) lenv
-  | InsDef (t,v, Some i) -> assert false
+    let nlenv = allocate_var v lenv in
+    let rhs = match op with
+      | None -> (* On alloue juste de la place pour la variable *)
+	pushn s
+      | Some InsDefExpr e -> (* On compile l'expr et on laisse le résultat *)
+	compile_expr e nlenv
+      | Some InsDefIdent (str, elist) -> assert false
+    in
+    code ++ comm ++ rhs, nlenv
   | InsIf (e,i) -> assert false
   | InsIfElse (e,i1,i2) -> assert false
   | InsWhile (e,i) -> assert false
@@ -117,7 +140,7 @@ let rec compile_ins code lenv sp = function
     let aux (code, lenv) = function
       | ExprStrExpr e -> 
 	let newcode = 
-	  (compile_expr e) ++ pop a0 ++ jal "print_int"	
+	  (compile_expr e lenv) ++ pop a0 ++ jal "print_int"	
 	in code ++ newcode, lenv
       | ExprStrStr s ->
 	(* TODO : vérifier qu'on n'a pas déjà stocké le string *)
@@ -130,6 +153,8 @@ let rec compile_ins code lenv sp = function
     code ++ inscode, nlenv
   | InsReturn e -> assert false
 		
+let save_fp_sp = comment " Sauvegarde de fp:" ++ push fp
+	    ++ comment " Sauvegarde de sp:" ++ push sp 
 let compile_decl codefun codemain = function
   | DeclVars _ -> assert false
   | DeclClass _ -> assert false
@@ -144,7 +169,8 @@ let compile_decl codefun codemain = function
 	    compile_ins code lenv 8 in
 	  (* On ajoute à l'env local les arguments et la taille donne l'offset. *)
 	  let lenv = allocate_args 0 p.argumentList in
-	  let codemain, _ = List.fold_left aux (codemain, lenv) b in
+	  let codemain, _ = 
+	    List.fold_left aux (codemain ++ save_fp_sp, lenv) b in
 	  codefun, codemain
       | Qvar _ -> assert false
       | Tident _ -> assert false
