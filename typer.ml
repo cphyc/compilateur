@@ -112,8 +112,18 @@ let rec exprTyper env exp = match exp.Ast.exprCont with
     | TypInt -> {exprTyp=TypInt; exprCont = ExprExclamation ne}
     | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
     end
-  | Ast.ExprMinus e -> assert false
-  | Ast.ExprPlus e -> assert false
+  | Ast.ExprMinus e ->
+    let ne = exprTyper env e in
+     begin match ne.exprTyp with
+     | TypInt -> {exprTyp=TypInt; exprCont = ExprMinus ne}
+     | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
+     end
+  | Ast.ExprPlus e ->     
+    let ne = exprTyper env e in
+     begin match ne.exprTyp with
+     | TypInt -> {exprTyp=TypInt; exprCont = ExprPlus ne}
+     | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
+     end
   | Ast.ExprOp (e1, o, e2) -> 
     let ne1 = exprTyper env e1 and ne2 = exprTyper env e2 in
     begin match (ne1.exprTyp, ne2.exprTyp) with

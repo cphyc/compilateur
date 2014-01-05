@@ -57,6 +57,7 @@ let rec compile_expr ex lenv = match ex.exprCont with
       let offset = 
 	try SMap.find s lenv 
 	with 
+	  (* TODO : afficher la position ... *)
 	  Not_found->raise (Error (String.concat " " ["Variable";s;"non déclarée"]))
       in
       comment (String.concat " " [" Chargement de la variable";s])
@@ -75,8 +76,9 @@ let rec compile_expr ex lenv = match ex.exprCont with
 | ExprRDecr e -> assert false
 | ExprAmpersand e -> assert false
 | ExprExclamation e -> assert false
-| ExprMinus e -> assert false
-| ExprPlus e -> assert false
+| ExprMinus e -> compile_expr e lenv ++ pop a0 
+  ++ comment " Opposé numérique" ++ neg a0 a0 ++ push a0
+| ExprPlus e -> compile_expr e lenv
 | ExprOp (e1,o,e2) -> 
   begin
     let ce1, ce2 = compile_expr e1 lenv, compile_expr e2 lenv in
@@ -96,7 +98,7 @@ let rec compile_expr ex lenv = match ex.exprCont with
     | OpDivide -> arith_op div 
     (* TODO : traiter le cas où e2 est nul -> pas sûr que ce soit nécessaire *)
     | OpModulo -> arith_op rem (*TODO : ^*)
-    | OpAnd -> (*Paresseux*)
+    | OpAnd -> (* Paresseux *)
       let label1, label2 = new_label (), new_label () in
       ce1 ++ pop a0 ++ beqz a0 label1 
       ++ ce2 ++ pop a0 ++ beqz a0 label1
