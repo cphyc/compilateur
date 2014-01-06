@@ -22,6 +22,13 @@ let rec qvarTyper = function
   | Ast.QvarReference qvar -> assert false
     (* QvarReference (qvarTyper qvar) *)
 
+let rec prevent_redeclaration env var = match var.Ast.varCont with
+  | Ast.VarIdent s -> 
+    if Smap.mem s env then
+      raise (Error ("Redéfinition illégale de la variable "^s^".", var.Ast.varLoc))
+    else ()
+  | Ast.VarPointer v | Ast.VarReference v -> prevent_redeclaration env v
+  
 let protoVarTTyper = function
   | Ast.Qvar (typ, qvar) -> Qvar (typConverter typ.Ast.typCont, qvarTyper qvar.Ast.qvarCont)
   | Ast.Tident s -> assert false
@@ -140,7 +147,13 @@ let rec exprTyper env exp = match exp.Ast.exprCont with
 and exprLVTyper env exp = match exp.Ast.exprCont with
   | Ast.ExprQident Ast.Ident s ->
     (* On a un identificateur, on cherche son type dans l'env *)
-    let ttyp = Smap.find s env in
+    let ttyp = 
+      try Smap.find s env
+      with Not_found ->
+	raise 
+	  (Error ((String.concat "" ["Variable \"";s;"\" non déclarée"]),
+		  exp.Ast.exprLoc))
+    in
     {exprTyp = ttyp; exprCont = ExprQident (Ident s)}
   | Ast.ExprQident Ast.IdentIdent (s1, s2) -> assert false
   | Ast.ExprDot (e, s) -> assert false
@@ -168,6 +181,9 @@ let rec insListTyper env = function
       | Ast.InsSemicolon -> (env, InsSemicolon)
       | Ast.InsExpr e -> (env, InsExpr (exprTyper env e))
       | Ast.InsDef (typ, var, insDef) ->
+	(* On commence par vérifier que la variable n'a pas été déclarée,
+	   puis on type l'instruction de définition *)
+	prevent_redeclaration env var;
 	begin
 	  let ttyp = typConverter typ.Ast.typCont in
 	  let tvar = varTyper typ.Ast.typCont var in

@@ -18,6 +18,7 @@ let new_label () = labelint := !labelint + 1;
   else
     "label_"^(string_of_int (!labelint))
 
+(* renvoie la taille d'un type *)
 let rec sizeof = function
 | TypNull -> assert false
 | TypVoid -> assert false
@@ -25,13 +26,14 @@ let rec sizeof = function
 | TypIdent s -> assert false
 | TypPointer t -> sizeof t
 
+(* alloue de la mémoire pour les arguments d'un appel de fonction *)
 let rec allocate_args shift = function
   | [] -> SMap.empty
   | v::vlist -> let new_shift = shift + sizeof v.varTyp in
 		SMap.add v.varIdent shift (allocate_args new_shift vlist)
 
-(* Cherche le plus petit offset (% à fp) et empile en dessous. Si vide,
-   on met par défaut - 8 (car on a sauvé fp et sp). *)
+(* alloue de la mémoire pour une variable en cherchant le plus petit offset (% à fp)
+   et empile en dessous. Si l'env est vide, renvoie - 8 (car on a sauvé fp et sp).*)
 let allocate_var v lenv = 
   let _, offset = 
     try 
@@ -39,81 +41,87 @@ let allocate_var v lenv =
       SMap.max_binding 
 	(SMap.filter (fun _ off -> if off>=0 then false else true) lenv)
     with Not_found -> "", -8 in
-  if SMap.mem v.varIdent lenv then 
-    raise (Error "Redéfinition illégale de variable.")
-  else
-    SMap.add v.varIdent (offset - sizeof v.varTyp) lenv
+  (* if SMap.mem v.varIdent lenv then *)
+  (*   (\* TODO: afficher la position de l'erreur *\) *)
+  (*   raise (Error "Redéfinition illégale de variable.") *)
+  (* else *)
+  (* Inutile, le typer l'a déjà fait *)
+  SMap.add v.varIdent (offset - sizeof v.varTyp) lenv
   
 
 let rec compile_expr ex lenv = match ex.exprCont with
 (* Compile l'expression et place le résultat au sommet de la pile *)
-| ExprInt i -> li a0 i ++ push a0
-| This -> assert false
-| Null -> assert false
-| ExprQident q -> 
-  begin
-    match q with 
-    | Ident s -> 
-      let offset = 
-	try SMap.find s lenv 
-	with 
-	  (* TODO : afficher la position ... *)
-	  Not_found->raise (Error (String.concat " " ["Variable";s;"non déclarée"]))
-      in
-      comment (String.concat " " [" Chargement de la variable";s])
-      ++ lw a0 areg (offset, fp) ++ push a0      
-    | IdentIdent (s1,s2) -> assert false
-  end
-| ExprStar e -> assert false
-| ExprDot (e,s) -> assert false
-| ExprArrow (e,s) -> assert false
-| ExprEqual (e1,e2) -> assert false
-| ExprApply (e,l) -> assert false
-| ExprNew (s, l) -> assert false
-| ExprLIncr e -> assert false
-| ExprLDecr e -> assert false
-| ExprRIncr e -> assert false
-| ExprRDecr e -> assert false
-| ExprAmpersand e -> assert false
-| ExprExclamation e -> assert false
-| ExprMinus e -> compile_expr e lenv ++ pop a0 
-  ++ comment " Opposé numérique" ++ neg a0 a0 ++ push a0
-| ExprPlus e -> compile_expr e lenv
-| ExprOp (e1,o,e2) -> 
-  begin
-    let ce1, ce2 = compile_expr e1 lenv, compile_expr e2 lenv in
-    let calc = ce1 ++ ce2 ++ pop a1 ++ pop a0 in
-    let comp_op operator = calc ++ (operator a0 a0 a1) ++ push a0 in
-    let arith_op operator = calc ++ (operator a0 a0 oreg a1) ++ push a0 in
-    match o with
-    | OpEqual -> comp_op seq
-    | OpDiff -> comp_op sne
-    | OpLesser -> comp_op slt
-    | OpLesserEqual -> comp_op sle
-    | OpGreater -> comp_op sgt
-    | OpGreaterEqual -> comp_op sge
-    | OpPlus -> arith_op add
-    | OpMinus -> arith_op sub
-    | OpTimes -> arith_op mul
-    | OpDivide -> arith_op div 
+  | ExprInt i -> li a0 i ++ push a0
+  | This -> assert false
+  | Null -> assert false
+  | ExprQident q -> 
+    begin
+      match q with 
+      | Ident s -> 
+      (* Pas la peine de vérifier que ça a été déclaré, on l'a déjà fait *)
+	let offset = SMap.find s lenv in
+	comment (String.concat " " [" Chargement de la variable";s])
+	++ lw a0 areg (offset, fp) ++ push a0      
+      | IdentIdent (s1,s2) -> assert false
+    end
+  | ExprStar e -> assert false
+  | ExprDot (e,s) -> assert false
+  | ExprArrow (e,s) -> assert false
+  | ExprEqual (e1,e2) -> compile_expr e1 lenv 
+  | ExprApply (e,l) -> assert false
+  | ExprNew (s, l) -> assert false
+(* Vérifier que ça ne change rien dans notre grammaire *)
+  | ExprRIncr e | ExprLIncr e -> compile_expr e lenv
+    ++ comment " Incrémentation" ++ pop a0 ++ add a0 a0 oi 1 ++ push a0
+  | ExprRDecr e | ExprLDecr e -> compile_expr e lenv
+    ++ comment " Décrémentation" ++ pop a0 ++ sub a0 a0 oi 1 ++ push a0
+  | ExprAmpersand e -> assert false
+  | ExprExclamation e -> (* TODO : opérations MIPS pour le faire ? *)
+    let lab1, lab2 = new_label (), new_label () in
+    compile_expr e lenv
+    ++ comment " Négation logique" ++ pop a0 ++ beqz a0 lab1
+    ++ comment " si non nul :" ++ li a0 0 ++ push a0 ++ b lab2
+    ++ label lab1 ++ comment " si nul :" ++ li a0 1 ++ push a0
+    ++ label lab2
+  | ExprMinus e -> compile_expr e lenv ++ pop a0 
+    ++ comment " Négation arithmétique" ++ neg a0 a0 ++ push a0
+  | ExprPlus e -> compile_expr e lenv
+  | ExprOp (e1,o,e2) -> 
+    begin
+      let ce1, ce2 = compile_expr e1 lenv, compile_expr e2 lenv in
+      let calc = ce1 ++ ce2 ++ pop a1 ++ pop a0 in
+      let comp_op operator = calc ++ (operator a0 a0 a1) ++ push a0 in
+      let arith_op operator = calc ++ (operator a0 a0 oreg a1) ++ push a0 in
+      match o with
+      | OpEqual -> comp_op seq
+      | OpDiff -> comp_op sne
+      | OpLesser -> comp_op slt
+      | OpLesserEqual -> comp_op sle
+      | OpGreater -> comp_op sgt
+      | OpGreaterEqual -> comp_op sge
+      | OpPlus -> arith_op add
+      | OpMinus -> arith_op sub
+      | OpTimes -> arith_op mul
+      | OpDivide -> arith_op div 
     (* TODO : traiter le cas où e2 est nul -> pas sûr que ce soit nécessaire *)
-    | OpModulo -> arith_op rem (*TODO : ^*)
-    | OpAnd -> (* Paresseux *)
-      let label1, label2 = new_label (), new_label () in
-      ce1 ++ pop a0 ++ beqz a0 label1 
-      ++ ce2 ++ pop a0 ++ beqz a0 label1
-      ++ li a0 1 ++ push a0 ++ b label2 ++ label label1 
-      ++ push zero ++ label label2
-    | OpOr -> 
-      let label1, label2 = new_label (), new_label () in
-      ce1 ++ pop a0 ++ bnez a0 label1 
-      ++ ce2 ++ pop a0 ++ bnez a0 label1
-      ++ push zero ++ b label2 ++ label label1 
-      ++ li a0 1 ++ push a0 ++ label label2
-  end
-| ExprParenthesis e -> compile_expr e lenv
+      | OpModulo -> arith_op rem (*TODO : ^*)
+      | OpAnd -> (* Paresseux *)
+	let label1, label2 = new_label (), new_label () in
+	ce1 ++ pop a0 ++ beqz a0 label1 
+	++ ce2 ++ pop a0 ++ beqz a0 label1
+	++ li a0 1 ++ push a0 ++ b label2 ++ label label1 
+	++ push zero ++ label label2
+      | OpOr -> 
+	let label1, label2 = new_label (), new_label () in
+	ce1 ++ pop a0 ++ bnez a0 label1 
+	++ ce2 ++ pop a0 ++ bnez a0 label1
+	++ push zero ++ b label2 ++ label label1 
+	++ li a0 1 ++ push a0 ++ label label2
+    end
+  | ExprParenthesis e -> compile_expr e lenv
 
 let pushn = sub sp sp oi
+
 (* sig : code -> lenv -> sp -> code, lenv
    Renvoie le code completé de celui de l'instruction.
    TODO? : s'arranger pour que les variables locales soient bien en début de pile
