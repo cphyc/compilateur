@@ -92,7 +92,7 @@ let opTyper o = match o.Ast.opCont with
 | Ast.OpAnd -> OpAnd
 | Ast.OpOr -> OpOr
 
-let rec exprTyper env exp = match exp.Ast.exprCont with
+let rec exprTyper lenv exp = match exp.Ast.exprCont with
   | Ast.ExprInt i -> { exprTyp=TypInt; exprCont= ExprInt i }
   | Ast.This -> assert false
   | Ast.False -> { exprTyp=TypInt; exprCont= ExprInt 0}
@@ -100,7 +100,7 @@ let rec exprTyper env exp = match exp.Ast.exprCont with
   | Ast.Null -> { exprTyp=TypNull; exprCont=Null }
   | Ast.ExprArrow (e, s) -> assert false (* Sucre syntaxique à virer *)
   | Ast.ExprEqual (e1, e2) -> 
-    let el, er = exprLVTyper env e1, exprTyper env e2 in
+    let el, er = exprLVTyper lenv e1, exprTyper lenv e2 in
     if not (typIn er.exprTyp el.exprTyp) then
       raise (Error ("Types incompatibles.", exp.Ast.exprLoc))
     else if not (typNum er.exprTyp) then
@@ -110,59 +110,59 @@ let rec exprTyper env exp = match exp.Ast.exprCont with
   | Ast.ExprApply (e, el) -> assert false
   | Ast.ExprNew (s, el) -> assert false
   | Ast.ExprLIncr e -> 
-    let ne = exprLVTyper env e in
+    let ne = exprLVTyper lenv e in
     begin match ne.exprTyp with
     | TypInt -> { exprTyp=TypInt; exprCont= ExprLIncr ne }
     | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
     end
   | Ast.ExprLDecr e -> 
-    let ne = exprLVTyper env e in
+    let ne = exprLVTyper lenv e in
     begin match ne.exprTyp with
     | TypInt -> { exprTyp=TypInt; exprCont= ExprLDecr ne }
     | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
     end
   | Ast.ExprRIncr e -> 
-    let ne = exprLVTyper env e in
+    let ne = exprLVTyper lenv e in
     begin match ne.exprTyp with
     | TypInt -> {exprTyp=TypInt; exprCont= ExprRIncr ne}
     | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
     end
   | Ast.ExprRDecr e ->
-    let ne = exprLVTyper env e in
+    let ne = exprLVTyper lenv e in
     begin match ne.exprTyp with
     | TypInt -> {exprTyp=TypInt; exprCont= ExprRDecr ne}
     | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
     end
   | Ast.ExprAmpersand e -> assert false
   | Ast.ExprExclamation e -> 
-    let ne = exprTyper env e in
+    let ne = exprTyper lenv e in
     begin match ne.exprTyp with
     | TypInt -> {exprTyp=TypInt; exprCont = ExprExclamation ne}
     | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
     end
   | Ast.ExprMinus e ->
-    let ne = exprTyper env e in
+    let ne = exprTyper lenv e in
      begin match ne.exprTyp with
      | TypInt -> {exprTyp=TypInt; exprCont = ExprMinus ne}
      | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
      end
   | Ast.ExprPlus e ->     
-    let ne = exprTyper env e in
+    let ne = exprTyper lenv e in
      begin match ne.exprTyp with
      | TypInt -> {exprTyp=TypInt; exprCont = ExprPlus ne}
      | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
      end
   | Ast.ExprOp (e1, o, e2) -> 
-    let ne1 = exprTyper env e1 and ne2 = exprTyper env e2 in
+    let ne1 = exprTyper lenv e1 and ne2 = exprTyper lenv e2 in
     begin match (ne1.exprTyp, ne2.exprTyp) with
     | TypInt, TypInt -> 
       {exprTyp = TypInt; 
-       exprCont = ExprOp (exprTyper env e1, opTyper o, exprTyper env e2)}
+       exprCont = ExprOp (exprTyper lenv e1, opTyper o, exprTyper lenv e2)}
     | _ -> raise (Error ("Type int attendu", exp.Ast.exprLoc))
     end
   | Ast.ExprParenthesis e -> 
-    exprTyper env e
-  | e -> exprLVTyper env exp
+    exprTyper lenv e
+  | e -> exprLVTyper lenv exp
 
 (* Pour les valeurs gauches *)
 and exprLVTyper lenv exp = match exp.Ast.exprCont with
@@ -191,47 +191,55 @@ let expr_strTyper env = function
   | Ast.ExprStrExpr e -> ExprStrExpr (exprTyper env e)
   | Ast.ExprStrStr s -> ExprStrStr s
 
+
+let rec insTyper lenv ins = match ins.Ast.insCont with
+  | Ast.InsSemicolon -> (lenv, InsSemicolon)
+  | Ast.InsExpr e -> (lenv, InsExpr (exprTyper lenv e))
+  | Ast.InsDef (typ, var, insDef) ->
+	(* On commence par vérifier que la variable n'a pas été déclarée,
+	   puis on type l'instruction de définition *)
+    prevent_redeclaration lenv var;
+    begin
+      let ttyp = typConverter typ.Ast.typCont in
+      let tvar = varTyper typ.Ast.typCont var in
+      match insDef with
+      | Some Ast.InsDefExpr e -> 
+	let te = exprTyper lenv e in
+	if te.exprTyp != ttyp then
+	  raise (Error ("Types incompatibles.", ins.Ast.insLoc))
+	else
+	  (Smap.add tvar.varIdent ttyp lenv),
+	  InsDef (ttyp, tvar, Some (InsDefExpr te))
+      | Some Ast.InsDefIdent (s, elist) -> assert false
+      | None -> ( Smap.add tvar.varIdent ttyp lenv), InsDef (ttyp, tvar, None) 
+    end
+  | Ast.InsIf (e, i) -> 
+    let _, ins = insTyper lenv i in
+    lenv, InsIf (exprTyper lenv e, ins)
+  | Ast.InsIfElse (e, i1, i2) -> 
+    let _, ins1 = insTyper lenv i1 in
+    let _, ins2 = insTyper lenv i2 in
+    lenv,
+    InsIfElse (exprTyper lenv e, ins1, ins2)
+  | Ast.InsWhile (e, i) -> assert false
+  | Ast.InsFor (el1, eopt, el2, i) -> assert false
+  | Ast.InsBloc b -> 
+    let insList = insListTyper lenv b.Ast.blocCont in
+    (lenv, InsBloc insList)
+  | Ast.InsCout s -> 
+    (lenv, InsCout (List.map (expr_strTyper lenv) s))
+  | Ast.InsReturn eopt -> assert false
+
 (* Typage des instructions.
    La fonction type au fur et à mesure les instructions en mettant à jour 
    l'environnement.
    sig : env -> Ast.ins list -> Tast.ins *)
-let rec insListTyper env = function
+and insListTyper lenv = function
   | [] -> []
   | ins::insl -> 
-    (* Sous fonction qui récupère le nouvel env et l'instruction typée *)
-    let newEnv, tIns = match ins.Ast.insCont with
-      | Ast.InsSemicolon -> (env, InsSemicolon)
-      | Ast.InsExpr e -> (env, InsExpr (exprTyper env e))
-      | Ast.InsDef (typ, var, insDef) ->
-	(* On commence par vérifier que la variable n'a pas été déclarée,
-	   puis on type l'instruction de définition *)
-	prevent_redeclaration env var;
-	begin
-	  let ttyp = typConverter typ.Ast.typCont in
-	  let tvar = varTyper typ.Ast.typCont var in
-	  match insDef with
-	  | Some Ast.InsDefExpr e -> 
-	    let te = exprTyper env e in
-	    if te.exprTyp != ttyp then
-	      raise (Error ("Types incompatibles.", ins.Ast.insLoc))
-	    else
-	      (Smap.add tvar.varIdent ttyp env),
-	      InsDef (ttyp, tvar, Some (InsDefExpr te))
-	  | Some Ast.InsDefIdent (s, elist) -> assert false
-	  | None -> ( Smap.add tvar.varIdent ttyp env), InsDef (ttyp, tvar, None) 
-	end
-      | Ast.InsIf (e, ins) -> assert false
-      | Ast.InsIfElse (e, i1, i2) -> assert false
-      | Ast.InsWhile (e, i) -> assert false
-      | Ast.InsFor (el1, eopt, el2, i) -> assert false
-      | Ast.InsBloc b -> 
-	let insList = insListTyper env b.Ast.blocCont in
-	(env, InsBloc insList)
-      | Ast.InsCout s -> 
-	(env, InsCout (List.map (expr_strTyper env) s))
-      | Ast.InsReturn eopt -> assert false
-    in
-    tIns::(insListTyper newEnv insl)
+    (* Sous fonction qui récupère le nouvel lenv et l'instruction typée *)
+    let nlenv, tIns = insTyper lenv ins in
+    tIns::(insListTyper nlenv insl)
 
 let declTyper = function
   | Ast.DeclVars dv -> 

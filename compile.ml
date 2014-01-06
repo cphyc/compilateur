@@ -24,7 +24,7 @@ let new_label () = labelint := !labelint + 1;
 (* renvoie la taille d'un type *)
 let rec sizeof = function
 | TypNull -> assert false
-| TypVoid -> assert false
+| TypVoid -> 4 (* À vérifier *)
 | TypInt -> 4
 | TypIdent s -> assert false
 | TypPointer t -> sizeof t
@@ -50,12 +50,8 @@ let allocate_var v lenv =
       (* On prend le plus grand offset en val abs parmi les offs négatifs *)
       Smap.max_binding 
 	(Smap.filter (fun _ off -> if off>=0 then false else true) lenv)
-    with Not_found -> "", -8 in
-  (* if Smap.mem v.varIdent lenv then *)
-  (*   (\* TODO: afficher la position de l'erreur *\) *)
-  (*   raise (Error "Redéfinition illégale de variable.") *)
-  (* else *)
-  (* Inutile, le typer l'a déjà fait *)
+    with Not_found -> "", -8
+  in
   Smap.add v.varIdent (offset - sizeof v.varTyp) lenv
   
 
@@ -64,13 +60,12 @@ let compile_LVexpr lenv = function
   | ExprQident q -> begin match q with
     | Ident s ->
       begin
-      (* TODO : gérer les variables globales dans le tas *)
-	try let pos = Smap.find s lenv in
+	try let pos = Smap.find s lenv in (* Variable locale *)
 	    comment (" Décalage de la variable "^s) ++ li a0 pos 
 	    ++ comment (" Calcul de la position absolue") ++ add a0 a0 oreg fp
 	    ++ push a0
 	with
-	  Not_found -> 
+	  Not_found -> (* Variable globale *)
 	    let lab, _ = Hashtbl.find genv s in
 	    comment (" Variable globale au label "^lab) 
 	    ++ la a0 alab lab
@@ -167,14 +162,12 @@ let rec compile_expr ex lenv = match ex.exprCont with
 
 (* sig : code -> lenv -> sp -> code, lenv
    Renvoie le code completé de celui de l'instruction.
-   TODO? : s'arranger pour que les variables locales soient bien en début de pile
-   et pas en dessous de la place utilisée pour les calculs.
    TODO : etre cohérent et avoir compile_ins qui ne prend pas code en argument.
 *)
-let rec compile_ins code lenv sp = function
-  | InsSemicolon -> code, lenv
+let rec compile_ins lenv sp = function
+  | InsSemicolon -> nop, lenv
   | InsExpr e -> (* le résultat est placé en sommet de pile *)
-      code ++ compile_expr e lenv, lenv
+      compile_expr e lenv, lenv
   | InsDef (t,v,op) ->
     let comm = comment (" allocation de la variable "^v.varIdent) in
     let s = sizeof t in
@@ -186,19 +179,23 @@ let rec compile_ins code lenv sp = function
 	compile_expr e nlenv
       | Some InsDefIdent (str, elist) -> assert false
     in
-    code ++ comm ++ rhs, nlenv
-  | InsIf (e,i) -> assert false
+    comm ++ rhs, nlenv
+  | InsIf (e,i) -> 
+    let if_true, if_false = new_label (), new_label () in
+    let instruction, nlenv = compile_ins lenv sp i in
+    compile_expr e lenv ++ pop a0 ++ bnez a0 if_true 
+    ++ label if_true ++ instruction
+    ++ label if_false, nlenv
   | InsIfElse (e,i1,i2) -> assert false
   | InsWhile (e,i) -> assert false
   | InsFor (l1,e,l2,i) -> assert false
-  | InsBloc b -> 
-    (* reçoit un couple de code et d'environnement et le met à jour selon ins *)
+  | InsBloc b ->
     let aux (code', lenv) ins =
-      let inscode, nlenv = compile_ins code lenv sp ins in
+      let inscode, nlenv = compile_ins lenv sp ins in
       code' ++ inscode, nlenv
     in
     let inslistcode, nlenv = (List.fold_left aux (nop, lenv) b) in
-    code ++ inslistcode, nlenv
+    inslistcode, nlenv
   | InsCout l -> 
     let aux (code, lenv) = function
       | ExprStrExpr e -> 
@@ -213,7 +210,7 @@ let rec compile_ins code lenv sp = function
     in
     let inscode, nlenv = (List.fold_left aux (nop, lenv) l) in
     let comm = comment " Affichage via cout" in
-    code ++ comm ++ inscode, nlenv
+    comm ++ inscode, nlenv
   | InsReturn e -> assert false
 		 
 let compile_decl codefun codemain = function
@@ -233,10 +230,10 @@ let compile_decl codefun codemain = function
       | Qvar (typ, QvarQident Ident "main") -> 
 	if typ != TypInt then raise (Error "main doit avoir le type int")
 	else
-	  let aux (code, lenv) = 
-	    (* On continue en dessous de fp et sp (offset de 8) *)
-	    compile_ins code lenv 8 in
-	  (* On ajoute à l'env local les arguments et la taille donne l'offset. *)
+	  let aux (code, lenv) ins = 
+	    let inscode, nlenv = compile_ins lenv 8 ins in
+	    code ++ inscode, nlenv
+	  in
 	  let lenv = allocate_args 0 p.argumentList in
 	  let codemain, _ = 
 	    List.fold_left aux (codemain ++ save_fp_sp, lenv) b in
