@@ -3,7 +3,8 @@ open Tast
 
 (* On crée un dictionnaire associant à chaque variable son type *)
 module Smap = Map.Make(String)
-let genv:(typ Smap.t ref) = ref Smap.empty
+(* Environnement global : à chaque variable un type *)
+let genv: (string, typ) Hashtbl.t = Hashtbl.create 42
 
 (* Simple fonction effectuant la conversion entre Ast et Tast *)
 let rec typConverter = function
@@ -38,7 +39,7 @@ let rec qvarTyper = function
 let rec prevent_redeclaration env var = match var.Ast.varCont with
   | Ast.VarIdent s -> 
     if Smap.mem s env then
-      raise (Error ("Redéfinition illégale de la variable "^s^".", var.Ast.varLoc))
+      raise (Error ("Redéfinition illégale de la variable \""^s^"\".", var.Ast.varLoc))
     else ()
   | Ast.VarPointer v | Ast.VarReference v -> prevent_redeclaration env v
   
@@ -61,13 +62,13 @@ let rec varTyper typ v0 = match v0.Ast.varCont with
       { varIdent=nv.varIdent; varRef=true;
 	varTyp=nv.varTyp }
 
-let rec argumentTyper env = function
-  | [] -> env, []
+let rec argumentTyper lenv = function
+  | [] -> lenv, []
   | arg::alist -> 
     let v = varTyper arg.Ast.argumentTyp.Ast.typCont  arg.Ast.argumentVar in
-    let nenv, vlist = (argumentTyper env alist) in
+    let nlenv, vlist = (argumentTyper lenv alist) in
     varUnique arg.Ast.argumentLoc v vlist;
-    (Smap.add v.varIdent v.varTyp nenv), (v::vlist)
+    (Smap.add v.varIdent v.varTyp nlenv), (v::vlist)
 
 (* Cette fonction verifie qu'on n'a pas redondance de variable *)
 and varUnique loc v0 = function
@@ -170,11 +171,10 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
     let ttyp = 
       try Smap.find s lenv
       with
-	Not_found -> try Smap.find s !genv
+	Not_found -> try Hashtbl.find genv s 
 	  with Not_found ->
 	    raise 
-	      (Error ((String.concat "" ["Variable \"";s;"\" non déclarée"]),
-		      exp.Ast.exprLoc))
+	      (Error ("Variable \""^s^"\" non déclarée", exp.Ast.exprLoc))
     in
     { exprTyp = ttyp; exprCont = ExprQident (Ident s) }
   | Ast.ExprQident Ast.IdentIdent (s1, s2) -> assert false
@@ -236,11 +236,11 @@ let rec insListTyper env = function
 let declTyper = function
   | Ast.DeclVars dv -> 
     let atyp = dv.Ast.declVarsTyp.Ast.typCont in
-    (* let ttyp = typConverter atyp in *)
     let vlist = dv.Ast.varList in
-    DeclVars (List.map 
-		(fun var -> (* genv := Smap.add var ttyp !genv; *)
-		  varTyper atyp var) vlist)   
+    DeclVars 
+      ( List.map (fun var -> let nv = varTyper atyp var in
+			    Hashtbl.add genv nv.varIdent nv.varTyp;
+			    nv) vlist)   
     
   | Ast.DeclClass c -> assert false
   | Ast.ProtoBloc (p, b) -> 
@@ -248,7 +248,7 @@ let declTyper = function
     (* Dans un monde merveilleux, le contexte env renvoie le contexte
        global ajouté aux types de tous les paramètres, ainsi que this si
        nécessaire*)
-    let env, argList = argumentTyper !genv p.Ast.argumentList in
+    let env, argList = argumentTyper Smap.empty p.Ast.argumentList in
     ProtoBloc 
       ( 
 	{ protoVar = protoVarTTyper p.Ast.protoVar ;

@@ -4,12 +4,12 @@ open Mips
 open Tast
 
 (* Environnement global *)
-let (genv : (string, unit) Hashtbl.t) = Hashtbl.create 17
+(* associe à un identificateur un couple de label * taille_de_la_variable *)
+let (genv : (string, (string * int list)) Hashtbl.t) = Hashtbl.create 17
 
 (* Ensemble des chaines de caractère *)
 module Smap = Map.Make(String)
-type data = Asciiz of string | Dword of int list
-let (dataMap : data Smap.t ref)= ref Smap.empty
+let dataMap = ref Smap.empty
 
 
 (********************* Utilitaires ********************)
@@ -70,7 +70,11 @@ let compile_LVexpr lenv = function
 	    ++ comment (" Calcul de la position absolue") ++ add a0 a0 oreg fp
 	    ++ push a0
 	with
-	  Not_found -> assert false	
+	  Not_found -> 
+	    let lab, _ = Hashtbl.find genv s in
+	    comment (" Variable globale au label "^lab) 
+	    ++ la a0 alab lab
+	    ++ push a0
       end
     | IdentIdent (s1, s2) -> assert false
   end
@@ -88,9 +92,16 @@ let rec compile_expr ex lenv = match ex.exprCont with
       match q with 
       | Ident s -> 
       (* Pas la peine de vérifier que ça a été déclaré, on l'a déjà fait *)
-	let offset = Smap.find s lenv in
-	comment (" chargement de la variable "^s)
-	++ lw a0 areg (offset, fp) ++ push a0      
+	let instruction =
+	  try
+	    let offset = Smap.find s lenv in
+	    lw a0 areg (offset, fp)
+	  with Not_found ->
+	    let lab, _ = Hashtbl.find genv s in
+	    lw a0 alab lab
+	in
+	comment (" chargement de la variable "^s) ++ instruction
+	++ push a0      
       | IdentIdent (s1,s2) -> assert false
     end
   | ExprStar e -> assert false
@@ -195,9 +206,8 @@ let rec compile_ins code lenv sp = function
 	  (compile_expr e lenv) ++ pop a0 ++ jal "print_int"	
 	in code ++ newcode, lenv
       | ExprStrStr s ->
-	(* TODO : vérifier qu'on n'a pas déjà stocké le string *)
 	let lab = new_label () in
-	dataMap := Smap.add lab (Asciiz s) !dataMap;
+	dataMap := Smap.add lab s !dataMap;
 	(* Il faut maintenant l'afficher *)
 	code ++ la a0 alab lab ++ li v0 4 ++ syscall, lenv
     in
@@ -211,7 +221,7 @@ let compile_decl codefun codemain = function
     let rec process = function
       | [] -> ()
       | var::vlist -> 
-	dataMap := Smap.add (new_label ()) (Dword [sizeof var.varTyp]) !dataMap;
+	Hashtbl.add genv var.varIdent (new_label (), [sizeof var.varTyp]);
 	process vlist
     in
     process vlist;
@@ -251,11 +261,13 @@ let compile p ofile =
     ++  syscall
     ++  jr ra
     ++  codefun;
-      data = Smap.fold 
-	(fun lab (ascii_or_word) data -> 
-	  data ++ label lab ++ (match ascii_or_word with
-	  | Asciiz str -> asciiz str
-	  | Dword ilist -> dword ilist)) !dataMap nop
+      data = 
+	Smap.fold 
+	  (fun lab word data -> data ++ label lab ++ asciiz word) !dataMap nop
+    ++  Hashtbl.fold 
+	  (fun str (lab, sizes) code -> code 
+	    ++ comment (" nid douillet de la variable "^str) 
+	    ++ label lab ++ dword sizes) genv nop
     ++  label "newline"
     ++  asciiz "\n"
     }
