@@ -7,6 +7,8 @@ open Tast
 (* associe à un identificateur un couple de label * taille_de_la_variable *)
 let (genv : (string, (string * int list)) Hashtbl.t) = Hashtbl.create 17
 
+let vrai = 1
+let faux = 0
 (* Ensemble des chaines de caractère *)
 module Smap = Map.Make(String)
 let dataMap = ref Smap.empty
@@ -120,8 +122,8 @@ let rec compile_expr ex lenv = match ex.exprCont with
     let lab2, lab1 = new_label (), new_label () in
     compile_expr e lenv
     ++ comment " Négation logique" ++ pop a0 ++ beqz a0 lab1
-    ++ comment "  cas non nul :" ++ li a0 0 ++ push a0 ++ b lab2
-    ++ label lab1 ++ comment "  cas nul :" ++ li a0 1 ++ push a0
+    ++ comment "  cas non nul :" ++ li a0 faux ++ push a0 ++ b lab2
+    ++ label lab1 ++ comment "  cas nul :" ++ li a0 vrai ++ push a0
     ++ label lab2
   | ExprMinus e -> compile_expr e lenv ++ pop a0 
     ++ comment " Négation arithmétique" ++ neg a0 a0 ++ push a0
@@ -149,14 +151,14 @@ let rec compile_expr ex lenv = match ex.exprCont with
 	let label1, label2 = new_label (), new_label () in
 	ce1 ++ pop a0 ++ beqz a0 label1 
 	++ ce2 ++ pop a0 ++ beqz a0 label1
-	++ li a0 1 ++ push a0 ++ b label2 ++ label label1 
+	++ li a0 vrai ++ push a0 ++ b label2 ++ label label1 
 	++ push zero ++ label label2
       | OpOr -> 
 	let label1, label2 = new_label (), new_label () in
 	ce1 ++ pop a0 ++ bnez a0 label1 
 	++ ce2 ++ pop a0 ++ bnez a0 label1
 	++ push zero ++ b label2 ++ label label1 
-	++ li a0 1 ++ push a0 ++ label label2
+	++ li a0 vrai ++ push a0 ++ label label2
     end
   | ExprParenthesis e -> compile_expr e lenv
 
@@ -173,22 +175,44 @@ let rec compile_ins lenv sp = function
     let s = sizeof t in
     let nlenv = allocate_var v lenv in
     let rhs = match op with
-      | None -> (* On alloue juste de la place pour la variable *)
-	pushn s
-      | Some InsDefExpr e -> (* On compile l'expr et on laisse le résultat *)
-	compile_expr e nlenv
+      | None -> pushn s
+      | Some InsDefExpr e -> compile_expr e nlenv
       | Some InsDefIdent (str, elist) -> assert false
     in
     comm ++ rhs, nlenv
-  | InsIf (e,i) -> 
-    let if_true, if_false = new_label (), new_label () in
-    let instruction, nlenv = compile_ins lenv sp i in
+  | InsIf (e,i) -> (* astuce de faineant *)
+    compile_ins lenv sp (InsIfElse(e,i,InsSemicolon))
+  | InsIfElse (e,i1,i2) -> 
+    let if_true, if_false, way_out = new_label (), new_label (), new_label () in
+    let ins1, _ = compile_ins lenv sp i1 in
+    let ins2, _ = compile_ins lenv sp i2 in
     compile_expr e lenv ++ pop a0 ++ bnez a0 if_true 
-    ++ label if_true ++ instruction
-    ++ label if_false, nlenv
-  | InsIfElse (e,i1,i2) -> assert false
-  | InsWhile (e,i) -> assert false
-  | InsFor (l1,e,l2,i) -> assert false
+    ++ comment " si vrai :" ++ label if_true ++ ins1 ++ b way_out
+    ++ comment " si faux :" ++ label if_false ++ ins2
+    ++ label way_out, lenv
+  | InsWhile (e,i) -> 
+    let way_in, way_out = new_label(), new_label() in
+    let ins1, _ = compile_ins lenv sp i in
+    comment " entrée de la boucle while" ++ label way_in ++ compile_expr e lenv 
+    ++ ins1
+    ++ comment " sortie de la boucle while" ++ label way_out, lenv
+  | InsFor (l1,e,l2,i) -> 
+    let compile_expr_list = 
+      List.fold_left (fun code e -> code ++ compile_expr e lenv) nop in
+    let init = compile_expr_list l1 in
+    let test = match e with
+    | Some e -> compile_expr e lenv 
+    | None -> li a0 vrai ++ push a0
+    in
+    let modify = compile_expr_list l2 in
+    let core, _ = compile_ins lenv sp i in
+    let labtest, way_out = new_label (), new_label () in
+    comment " initialisation de la boucle for" ++ init
+    ++ comment " test de sa condition" ++ label labtest ++ 
+      test ++ pop a0 ++ beqz a0 way_out
+    ++ comment " coeur de la boucle for" ++ core
+    ++ comment " modification des paramètres testés" ++ modify ++ b labtest
+    ++ comment " sortie de la boucle for" ++ label way_out, lenv
   | InsBloc b ->
     let aux (code', lenv) ins =
       let inscode, nlenv = compile_ins lenv sp ins in
