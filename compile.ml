@@ -7,9 +7,10 @@ open Tast
 let (genv : (string, unit) Hashtbl.t) = Hashtbl.create 17
 
 (* Ensemble des chaines de caractère *)
-module SMap = Map.Make(String)
-let stringMap = ref SMap.empty
+module Smap = Map.Make(String)
+let stringMap = ref Smap.empty
 
+(********************* Utilitaires ********************)
 (* compteur pour de belles étiquettes *)
 let labelint = ref 0
 let new_label () = labelint := !labelint + 1; 
@@ -26,11 +27,18 @@ let rec sizeof = function
 | TypIdent s -> assert false
 | TypPointer t -> sizeof t
 
+(* "pushn size" empile "size" octets sur la pile *)
+let pushn = sub sp sp oi
+
+(* () -> mips *)
+let save_fp_sp = comment " Sauvegarde de fp:" ++ push fp
+	    ++ comment " Sauvegarde de sp:" ++ push sp
+
 (* alloue de la mémoire pour les arguments d'un appel de fonction *)
 let rec allocate_args shift = function
-  | [] -> SMap.empty
+  | [] -> Smap.empty
   | v::vlist -> let new_shift = shift + sizeof v.varTyp in
-		SMap.add v.varIdent shift (allocate_args new_shift vlist)
+		Smap.add v.varIdent shift (allocate_args new_shift vlist)
 
 (* alloue de la mémoire pour une variable en cherchant le plus petit offset (% à fp)
    et empile en dessous. Si l'env est vide, renvoie - 8 (car on a sauvé fp et sp).*)
@@ -38,16 +46,35 @@ let allocate_var v lenv =
   let _, offset = 
     try 
       (* On prend le plus grand offset en val abs parmi les offs négatifs *)
-      SMap.max_binding 
-	(SMap.filter (fun _ off -> if off>=0 then false else true) lenv)
+      Smap.max_binding 
+	(Smap.filter (fun _ off -> if off>=0 then false else true) lenv)
     with Not_found -> "", -8 in
-  (* if SMap.mem v.varIdent lenv then *)
+  (* if Smap.mem v.varIdent lenv then *)
   (*   (\* TODO: afficher la position de l'erreur *\) *)
   (*   raise (Error "Redéfinition illégale de variable.") *)
   (* else *)
   (* Inutile, le typer l'a déjà fait *)
-  SMap.add v.varIdent (offset - sizeof v.varTyp) lenv
+  Smap.add v.varIdent (offset - sizeof v.varTyp) lenv
   
+
+(******************** Compilation ********************)
+let compile_LVexpr lenv = function
+  | ExprQident q -> begin match q with
+    | Ident s ->
+      begin
+      (* TODO : gérer les variables globales dans le tas *)
+	try let pos = Smap.find s lenv in
+	    comment (" Décalage de la variable "^s) ++ li a0 pos 
+	    ++ comment (" Calcul de la position absolue") ++ add a0 a0 oreg fp
+	    ++ push a0
+	with
+	  Not_found -> assert false	
+      end
+    | IdentIdent (s1, s2) -> assert false
+  end
+  | ExprStar e -> assert false
+  | ExprDot (e,s) -> assert false
+  | _ -> (* n'arrive pas *) assert false
 
 let rec compile_expr ex lenv = match ex.exprCont with
 (* Compile l'expression et place le résultat au sommet de la pile *)
@@ -59,7 +86,7 @@ let rec compile_expr ex lenv = match ex.exprCont with
       match q with 
       | Ident s -> 
       (* Pas la peine de vérifier que ça a été déclaré, on l'a déjà fait *)
-	let offset = SMap.find s lenv in
+	let offset = Smap.find s lenv in
 	comment (String.concat " " [" Chargement de la variable";s])
 	++ lw a0 areg (offset, fp) ++ push a0      
       | IdentIdent (s1,s2) -> assert false
@@ -67,16 +94,20 @@ let rec compile_expr ex lenv = match ex.exprCont with
   | ExprStar e -> assert false
   | ExprDot (e,s) -> assert false
   | ExprArrow (e,s) -> assert false
-  | ExprEqual (e1,e2) -> compile_expr e1 lenv 
+  | ExprEqual (e1,e2) -> (* On compile l'expression e1, c'est une lvalue donc 
+			    le résultat est son adresse *)
+    comment " calcul de la position" ++ compile_LVexpr lenv e1.exprCont ++ pop a0 
+    ++ comment " calcul de la valeur droite" ++ compile_expr e2 lenv ++ pop a1 
+    ++ comment " sauvegarde de la valeur" ++ sw a1 areg (0, a0)
   | ExprApply (e,l) -> assert false
   | ExprNew (s, l) -> assert false
-(* Vérifier que ça ne change rien dans notre grammaire *)
+  (* TODO: Vérifier que ça ne change rien dans notre grammaire *)
   | ExprRIncr e | ExprLIncr e -> compile_expr e lenv
     ++ comment " Incrémentation" ++ pop a0 ++ add a0 a0 oi 1 ++ push a0
   | ExprRDecr e | ExprLDecr e -> compile_expr e lenv
     ++ comment " Décrémentation" ++ pop a0 ++ sub a0 a0 oi 1 ++ push a0
   | ExprAmpersand e -> assert false
-  | ExprExclamation e -> (* TODO : opérations MIPS pour le faire ? *)
+  | ExprExclamation e ->
     let lab1, lab2 = new_label (), new_label () in
     compile_expr e lenv
     ++ comment " Négation logique" ++ pop a0 ++ beqz a0 lab1
@@ -119,8 +150,6 @@ let rec compile_expr ex lenv = match ex.exprCont with
 	++ li a0 1 ++ push a0 ++ label label2
     end
   | ExprParenthesis e -> compile_expr e lenv
-
-let pushn = sub sp sp oi
 
 (* sig : code -> lenv -> sp -> code, lenv
    Renvoie le code completé de celui de l'instruction.
@@ -166,7 +195,7 @@ let rec compile_ins code lenv sp = function
       | ExprStrStr s ->
 	(* TODO : vérifier qu'on n'a pas déjà stocké le string *)
 	let lab = new_label () in
-	stringMap := SMap.add lab s !stringMap;
+	stringMap := Smap.add lab s !stringMap;
 	(* Il faut maintenant l'afficher *)
 	code ++ la a0 alab lab ++ li v0 4 ++ syscall, lenv
     in
@@ -174,11 +203,9 @@ let rec compile_ins code lenv sp = function
     let comm = comment " Affichage via cout" in
     code ++ comm ++ inscode, nlenv
   | InsReturn e -> assert false
-		
-let save_fp_sp = comment " Sauvegarde de fp:" ++ push fp
-	    ++ comment " Sauvegarde de sp:" ++ push sp 
+		 
 let compile_decl codefun codemain = function
-  | DeclVars _ -> assert false
+  | DeclVars vlist -> assert false
   | DeclClass _ -> assert false
   | ProtoBloc (p, b) -> 
     begin
@@ -216,7 +243,7 @@ let compile p ofile =
     ++  codefun;
       data =
     	(* TODO : imprimer tous les string ici *)
-	SMap.fold 
+	Smap.fold 
 	  (fun lab word data -> data ++ label lab ++ asciiz word) !stringMap nop
     ++  label "newline"
     ++  asciiz "\n"

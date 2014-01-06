@@ -11,6 +11,19 @@ let rec typConverter = function
   | Ast.TypInt -> TypInt
   | Ast.TypIdent s -> TypIdent s
 
+(* vérifie que t1 est un sous-type de t2 *)
+let rec typIn t1 t2 = match t1, t2 with
+  | TypInt, TypInt -> true
+  | TypIdent s1, TypIdent s2 -> assert false
+  | TypNull, TypPointer _ -> true
+  | TypPointer t1', TypPointer t2' -> typIn t1' t2'
+  | _ -> false
+
+(* Type numérique : int, pointeur a.k.a typenull *)
+let typNum = function
+  | TypInt | TypPointer _ | TypNull -> true
+  | _ -> false
+
 let rec qidentTyper = function
   | Ast.Ident s -> Ident s
   | Ast.IdentIdent (s1, s2) -> assert false
@@ -85,7 +98,14 @@ let rec exprTyper env exp = match exp.Ast.exprCont with
   | Ast.True -> { exprTyp=TypInt; exprCont= ExprInt 1}
   | Ast.Null -> { exprTyp=TypNull; exprCont=Null }
   | Ast.ExprArrow (e, s) -> assert false (* Sucre syntaxique à virer *)
-  | Ast.ExprEqual (e1, e2) -> assert false
+  | Ast.ExprEqual (e1, e2) -> 
+    let el, er = exprLVTyper env e1, exprTyper env e2 in
+    if not (typIn er.exprTyp el.exprTyp) then
+      raise (Error ("Types incompatibles.", exp.Ast.exprLoc))
+    else if not (typNum er.exprTyp) then
+      raise (Error ("Type numérique attendu.", e2.Ast.exprLoc))
+    else
+      { exprTyp = el.exprTyp; exprCont= ExprEqual (el, er) }
   | Ast.ExprApply (e, el) -> assert false
   | Ast.ExprNew (s, el) -> assert false
   | Ast.ExprLIncr e -> 
@@ -144,21 +164,23 @@ let rec exprTyper env exp = match exp.Ast.exprCont with
   | e -> exprLVTyper env exp
 
 (* Pour les valeurs gauches *)
-and exprLVTyper env exp = match exp.Ast.exprCont with
+and exprLVTyper lenv exp = match exp.Ast.exprCont with
   | Ast.ExprQident Ast.Ident s ->
-    (* On a un identificateur, on cherche son type dans l'env *)
+    (* On a un identificateur, on cherche son type dans l'env local puis gal *)
     let ttyp = 
-      try Smap.find s env
-      with Not_found ->
-	raise 
-	  (Error ((String.concat "" ["Variable \"";s;"\" non déclarée"]),
-		  exp.Ast.exprLoc))
+      try Smap.find s lenv
+      with
+	Not_found -> try Smap.find s !genv
+	  with Not_found ->
+	    raise 
+	      (Error ((String.concat "" ["Variable \"";s;"\" non déclarée"]),
+		      exp.Ast.exprLoc))
     in
-    {exprTyp = ttyp; exprCont = ExprQident (Ident s)}
+    { exprTyp = ttyp; exprCont = ExprQident (Ident s) }
   | Ast.ExprQident Ast.IdentIdent (s1, s2) -> assert false
   | Ast.ExprDot (e, s) -> assert false
   | Ast.ExprStar e -> 
-    let ne = exprTyper env e in
+    let ne = exprTyper lenv e in
     begin match ne.exprTyp with
     | TypPointer t -> { exprTyp=t; exprCont=ExprStar ne }
     | _ -> raise (Error ("Pas un pointeur", exp.Ast.exprLoc))
