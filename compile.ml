@@ -8,7 +8,9 @@ let (genv : (string, unit) Hashtbl.t) = Hashtbl.create 17
 
 (* Ensemble des chaines de caractère *)
 module Smap = Map.Make(String)
-let stringMap = ref Smap.empty
+type data = Asciiz of string | Dword of int list
+let (dataMap : data Smap.t ref)= ref Smap.empty
+
 
 (********************* Utilitaires ********************)
 (* compteur pour de belles étiquettes *)
@@ -109,11 +111,11 @@ let rec compile_expr ex lenv = match ex.exprCont with
     ++ comment " Décrémentation" ++ pop a0 ++ sub a0 a0 oi 1 ++ push a0
   | ExprAmpersand e -> assert false
   | ExprExclamation e ->
-    let lab1, lab2 = new_label (), new_label () in
+    let lab2, lab1 = new_label (), new_label () in
     compile_expr e lenv
     ++ comment " Négation logique" ++ pop a0 ++ beqz a0 lab1
-    ++ comment " si non nul :" ++ li a0 0 ++ push a0 ++ b lab2
-    ++ label lab1 ++ comment " si nul :" ++ li a0 1 ++ push a0
+    ++ comment "  cas non nul :" ++ li a0 0 ++ push a0 ++ b lab2
+    ++ label lab1 ++ comment "  cas nul :" ++ li a0 1 ++ push a0
     ++ label lab2
   | ExprMinus e -> compile_expr e lenv ++ pop a0 
     ++ comment " Négation arithmétique" ++ neg a0 a0 ++ push a0
@@ -195,7 +197,7 @@ let rec compile_ins code lenv sp = function
       | ExprStrStr s ->
 	(* TODO : vérifier qu'on n'a pas déjà stocké le string *)
 	let lab = new_label () in
-	stringMap := Smap.add lab s !stringMap;
+	dataMap := Smap.add lab (Asciiz s) !dataMap;
 	(* Il faut maintenant l'afficher *)
 	code ++ la a0 alab lab ++ li v0 4 ++ syscall, lenv
     in
@@ -205,7 +207,15 @@ let rec compile_ins code lenv sp = function
   | InsReturn e -> assert false
 		 
 let compile_decl codefun codemain = function
-  | DeclVars vlist -> assert false
+  | DeclVars vlist -> 
+    let rec process = function
+      | [] -> ()
+      | var::vlist -> 
+	dataMap := Smap.add (new_label ()) (Dword [sizeof var.varTyp]) !dataMap;
+	process vlist
+    in
+    process vlist;
+    nop, nop
   | DeclClass _ -> assert false
   | ProtoBloc (p, b) -> 
     begin
@@ -241,10 +251,11 @@ let compile p ofile =
     ++  syscall
     ++  jr ra
     ++  codefun;
-      data =
-    	(* TODO : imprimer tous les string ici *)
-	Smap.fold 
-	  (fun lab word data -> data ++ label lab ++ asciiz word) !stringMap nop
+      data = Smap.fold 
+	(fun lab (ascii_or_word) data -> 
+	  data ++ label lab ++ (match ascii_or_word with
+	  | Asciiz str -> asciiz str
+	  | Dword ilist -> dword ilist)) !dataMap nop
     ++  label "newline"
     ++  asciiz "\n"
     }
