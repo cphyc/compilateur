@@ -87,7 +87,7 @@ let rec compile_expr ex lenv = match ex.exprCont with
       | Ident s -> 
       (* Pas la peine de vérifier que ça a été déclaré, on l'a déjà fait *)
 	let offset = Smap.find s lenv in
-	comment (String.concat " " [" Chargement de la variable";s])
+	comment (" chargement de la variable "^s)
 	++ lw a0 areg (offset, fp) ++ push a0      
       | IdentIdent (s1,s2) -> assert false
     end
@@ -96,8 +96,9 @@ let rec compile_expr ex lenv = match ex.exprCont with
   | ExprArrow (e,s) -> assert false
   | ExprEqual (e1,e2) -> (* On compile l'expression e1, c'est une lvalue donc 
 			    le résultat est son adresse *)
-    comment " calcul de la position" ++ compile_LVexpr lenv e1.exprCont ++ pop a0 
-    ++ comment " calcul de la valeur droite" ++ compile_expr e2 lenv ++ pop a1 
+    compile_LVexpr lenv e1.exprCont
+    ++ comment " calcul de la valeur droite" ++ compile_expr e2 lenv 
+    ++ pop a1 ++ pop a0 
     ++ comment " sauvegarde de la valeur" ++ sw a1 areg (0, a0)
   | ExprApply (e,l) -> assert false
   | ExprNew (s, l) -> assert false
@@ -162,8 +163,7 @@ let rec compile_ins code lenv sp = function
   | InsExpr e -> (* le résultat est placé en sommet de pile *)
       code ++ compile_expr e lenv, lenv
   | InsDef (t,v,op) ->
-    let comm = comment 
-      (String.concat " " [" Allocation de la variable";v.varIdent]) in
+    let comm = comment (" allocation de la variable "^v.varIdent) in
     let s = sizeof t in
     let nlenv = allocate_var v lenv in
     let rhs = match op with
