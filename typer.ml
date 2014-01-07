@@ -7,7 +7,7 @@ module Smap = Map.Make(String)
 let genv: (string, typ) Hashtbl.t = Hashtbl.create 42
 
 let classInheritances: (string, string) Hashtbl.t = Hashtbl.create 17
-let classFields: (string, string) Hashtbl.t = Hashtbl.create 17
+let classFields: (string, string * typ) Hashtbl.t = Hashtbl.create 17
 let classCons: (string, typ list) Hashtbl.t = Hashtbl.create 17
 
 let methodsTable: (string * string, typ * typ list) Hashtbl.t = Hashtbl.create 7
@@ -74,6 +74,21 @@ let minProf l0 =
 	      if List.exists (eqProf m) l' then l' else m::l'
   in
   minEns l0
+
+(* renvoie le type d'un champ f pour la classe c et ses surclasses*)
+let fieldType l c f =
+  let rec aux c' = 
+    if (List.mem_assoc f (Hashtbl.find_all classFields c')) then
+      [(List.assoc f (Hashtbl.find_all classFields c'))]
+      @ List.concat (List.map aux (Hashtbl.find_all classInheritances c'))
+    else
+      List.concat (List.map aux (Hashtbl.find_all classInheritances c'))
+  in
+  match aux c with
+  | [] -> raise (Error ("ce champ n'existe pas", l))
+  | [t] -> t
+  | _ -> raise (Error ("ce champ est ambigu", l))
+
 
 (* Type numérique : int, pointeur a.k.a typenull *)
 let typNum = function
@@ -160,9 +175,9 @@ let memberConverter s = function
 		  dv.Ast.declVarsLoc));
       let v = var.varIdent in
       let l = Hashtbl.find_all classFields s in
-      if List.mem v l 
+      if List.mem_assoc v l 
       then raise (Error ("already defined", dv.Ast.declVarsLoc))
-      else Hashtbl.add classFields s v
+      else Hashtbl.add classFields s (v, var.varTyp)
     in
     List.iter aux la;
     MemberDeclVars la
@@ -192,10 +207,7 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
     end
   | Ast.False -> { exprTyp=TypInt; exprCont= ExprInt 0}
   | Ast.True -> { exprTyp=TypInt; exprCont= ExprInt 1}
-  | Ast.Null -> { exprTyp=TypNull; exprCont=Null }
-  | Ast.ExprDot (e, s) ->    
-    let ne = exprLVTyper lenv e in
-    {exprTyp = ne.exprTyp; exprCont = ExprDot (ne, s)}
+  | Ast.Null -> { exprTyp=TypNull; exprCont=Null } 
   | Ast.ExprArrow (e, s) -> 
     exprTyper lenv 
       { Ast.exprLoc=exp.Ast.exprLoc;
@@ -214,15 +226,15 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
     let ne = exprLVTyper lenv e and nel = List.map (exprTyper lenv) el in
     begin
       match ne.exprCont with
-      | ExprQident (Ident s) 
-	  when (Hashtbl.mem functionsTable s)  -> (* Fonction *)
+      | ExprQident (Ident s) -> (* Fonction *)
+	(* when (Hashtbl.mem functionsTable s) *)
 	let lprof = snd (List.split (Hashtbl.find_all functionsTable s)) in
 	let p = List.map (fun e -> e.exprTyp) nel in
 	begin
-	match minProf (geqListProf p lprof) with
-	| [] -> raise (Error ("no profile corresponds", e.Ast.exprLoc))
-	| [p] -> { exprTyp = ne.exprTyp;  exprCont = ExprApply (ne, nel)}
-	| _ -> raise (Error ("several profiles correspond", e.Ast.exprLoc))
+	  match minProf (geqListProf p lprof) with
+	  | [] -> raise (Error ("no profile corresponds", e.Ast.exprLoc))
+	  | [p] -> { exprTyp = ne.exprTyp;  exprCont = ExprApply (ne, nel)}
+	  | _ -> raise (Error ("several profiles correspond", e.Ast.exprLoc))
 	end
       | _ -> assert false
     end
@@ -334,7 +346,13 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
     in
     { exprTyp = ttyp; exprCont = ExprQident (Ident s) }
   | Ast.ExprQident Ast.IdentIdent (s1, s2) -> assert false
-  | Ast.ExprDot (e, s) -> assert false
+  | Ast.ExprDot (e, s) ->    
+    let ne = exprLVTyper lenv e in
+    begin match ne.exprTyp with
+    | TypIdent c ->  {exprTyp = fieldType e.Ast.exprLoc c s; 
+		      exprCont = ExprDot (ne, s)}
+    | _ -> raise (Error ("n'est pas un constructeur", exp.Ast.exprLoc))
+    end
   | Ast.ExprStar e -> 
     let ne = exprTyper lenv e in
     begin match ne.exprTyp with
