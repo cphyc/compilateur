@@ -96,14 +96,12 @@ let rec classOfMethod q0 = match q0.Ast.qvarCont with
     
 let rec qidentTyper = function
   | Ast.Ident s -> Ident s
-  | Ast.IdentIdent (s1, s2) -> assert false
+  | Ast.IdentIdent (s1, s2) -> IdentIdent (s1, s2)
 
 let rec qvarTyper = function
   | Ast.QvarQident qident -> QvarQident (qidentTyper qident)
-  | Ast.QvarPointer qvar -> assert false
-    (* QvarPointer (qvarTyper qvar) *)
-  | Ast.QvarReference qvar -> assert false
-    (* QvarReference (qvarTyper qvar) *)
+  | Ast.QvarPointer qvar -> QvarPointer (qvarTyper qvar.Ast.qvarCont)
+  | Ast.QvarReference qvar -> QvarReference (qvarTyper qvar.Ast.qvarCont)
 
 let rec prevent_redeclaration env var = match var.Ast.varCont with
   | Ast.VarIdent s -> 
@@ -116,8 +114,8 @@ let rec prevent_redeclaration env var = match var.Ast.varCont with
 let protoVarTTyper = function
   | Ast.Qvar (typ, qvar) -> 
     Qvar (typConverter typ.Ast.typCont, qvarTyper qvar.Ast.qvarCont)
-  | Ast.Tident s -> assert false
-  | Ast.TidentTident (s1, s2) -> assert false
+  | Ast.Tident s -> Tident s
+  | Ast.TidentTident (s1, s2) -> TidentTident (s1, s2)
 
 let rec varTyper typ v0 = match v0.Ast.varCont with
   | Ast.VarIdent s -> { varIdent=s; varRef=false; varTyp=typConverter  typ}
@@ -131,7 +129,7 @@ let rec varTyper typ v0 = match v0.Ast.varCont with
     then raise (Error("Double référence", v0.Ast.varLoc))
     else 
       { varIdent=nv.varIdent; varRef=true;
-	varTyp=nv.varTyp }
+	varTyp= nv.varTyp }
 
 let rec argumentTyper lenv = function
   | [] -> lenv, [], []
@@ -190,8 +188,11 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
   | Ast.False -> { exprTyp=TypInt; exprCont= ExprInt 0}
   | Ast.True -> { exprTyp=TypInt; exprCont= ExprInt 1}
   | Ast.Null -> { exprTyp=TypNull; exprCont=Null }
+  | Ast.ExprDot (e, s) ->    
+    let ne = exprLVTyper lenv e in
+    {exprTyp = ne.exprTyp; exprCont = ExprDot (ne, s)}
   | Ast.ExprArrow (e, s) -> 
-    exprLVTyper lenv 
+    exprTyper lenv 
       { Ast.exprLoc=exp.Ast.exprLoc;
 	Ast.exprCont = Ast.ExprDot 
 	  ( {Ast.exprCont=Ast.ExprStar e; Ast.exprLoc=exp.Ast.exprLoc}, s)
@@ -218,8 +219,19 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	| [p] -> { exprTyp = ne.exprTyp;  exprCont = ExprApply (ne, nel)}
 	| _ -> raise (Error ("several profiles correspond", e.Ast.exprLoc))
 	end
+      | _ -> assert false
     end
-  | Ast.ExprNew (s, el) -> assert false
+  | Ast.ExprNew (s, el) -> 
+    let nel = List.map (exprTyper lenv) el in
+    let lprof = Hashtbl.find_all classCons s in
+    let p = List.map (fun e -> e.exprTyp) nel in
+    begin
+      match minProf (geqListProf p lprof) with
+      | [] -> raise (Error ("no profile corresponds", exp.Ast.exprLoc))
+      | [p] -> { exprTyp = TypPointer (TypIdent s);  
+		 exprCont = ExprNew (s, nel)}
+      | _ -> raise (Error ("several profiles correspond", exp.Ast.exprLoc))
+    end    
   | Ast.ExprLIncr e -> 
     let ne = exprLVTyper lenv e in
     begin match ne.exprTyp with
@@ -266,8 +278,6 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
      | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
      end
   | Ast.ExprOp (e1, o, e2) -> 
-    (* Attention, il faut pouvoir comparer les pointeurs : pour == et !=, on 
-    doit vérifier des types num, pas int !!*)
     let ne1 = exprTyper lenv e1 and ne2 = exprTyper lenv e2 in
     begin
       let o, tint = match o.Ast.opCont with 
@@ -349,23 +359,48 @@ let rec insTyper lenv ins = match ins.Ast.insCont with
       | Some Ast.InsDefExpr e -> 
 	let te = exprTyper lenv e in
 	if typIn te.exprTyp tvar.varTyp then
+	  if typBF tvar.varTyp then
 	  (Smap.add tvar.varIdent tvar.varTyp lenv),
 	  InsDef (tvar, Some (InsDefExpr te))
+	  else raise (Error ("Type mal forme", ins.Ast.insLoc))
 	else
 	  raise (Error ("Types incompatibles.", ins.Ast.insLoc))
       | Some Ast.InsDefIdent (s, elist) -> assert false
       | None -> ( Smap.add tvar.varIdent tvar.varTyp lenv), InsDef (tvar, None) 
     end
   | Ast.InsIf (e, i) -> 
-    let _, ins = insTyper lenv i in
-    lenv, InsIf (exprTyper lenv e, ins)
+    let _, ni = insTyper lenv i in
+    let ne = exprTyper lenv e in
+    if not (typEq ne.exprTyp TypInt) then 
+      raise (Error ("Pas un type int comme condition", ins.Ast.insLoc));
+    lenv, InsIf (ne, ni)
   | Ast.InsIfElse (e, i1, i2) -> 
     let _, ins1 = insTyper lenv i1 in
     let _, ins2 = insTyper lenv i2 in
+    let ne = exprTyper lenv e in
+    if not (typEq ne.exprTyp TypInt) then 
+      raise (Error ("Pas un type int comme condition", ins.Ast.insLoc));
     lenv,
     InsIfElse (exprTyper lenv e, ins1, ins2)
-  | Ast.InsWhile (e, i) -> assert false
-  | Ast.InsFor (el1, eopt, el2, i) -> assert false
+  | Ast.InsWhile (e, i) -> 
+    let _, ni = insTyper lenv i in
+    let ne = exprTyper lenv e in
+    if not (typEq ne.exprTyp TypInt) then 
+      raise (Error ("Pas un type int comme condition", ins.Ast.insLoc));
+    lenv, InsWhile (ne, ni)
+  | Ast.InsFor (el1, eopt, el2, i) -> 
+    let nel1 = List.map (exprTyper lenv) el1 in
+    let nel2 = List.map (exprTyper lenv) el2 in
+    let _, ni = insTyper lenv i in
+    let neopt = match eopt with 
+      |None -> None
+      |Some e -> let ne = exprTyper lenv e in
+		 if not (typEq ne.exprTyp TypInt) then
+		   raise (Error ("Pas un type int comme condition", 
+				 ins.Ast.insLoc));
+		 Some ne
+    in
+    lenv, InsFor (nel1, neopt, nel2, ni)
   | Ast.InsBloc b -> 
     let insList = insListTyper lenv b.Ast.blocCont in
     (lenv, InsBloc insList)
