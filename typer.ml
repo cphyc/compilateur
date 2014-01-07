@@ -232,7 +232,7 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
     let p = List.map (fun e -> e.exprTyp) nel in
     begin
       match minProf (geqListProf p lprof) with
-      | [] -> raise (Error ("no profile corresponds", exp.Ast.exprLoc))
+      | [] -> raise (Error ("no profile corresponds2", exp.Ast.exprLoc))
       | [p] -> { exprTyp = TypPointer (TypIdent s);  
 		 exprCont = ExprNew (s, nel)}
       | _ -> raise (Error ("several profiles correspond", exp.Ast.exprLoc))
@@ -449,9 +449,18 @@ let declTyper = function
       | None -> [""]
       | Some l' -> ""::l' in
     List.iter (Hashtbl.add classInheritances c.Ast.className) l;
+    let memberList = List.map (memberConverter c.Ast.className) 
+      c.Ast.memberList in
+    if (List.for_all 
+	  (function 
+	  |VirtualProto (b,p) -> 
+	    (match p.protoKind with |Cons _ -> false |_ -> true)
+	  |_ -> true)
+	  memberList)
+    then Hashtbl.add classCons c.Ast.className [];
     DeclClass 
       { className = c.Ast.className; supersOpt = c.Ast.supersOpt;
-	memberList = List.map (memberConverter c.Ast.className) c.Ast.memberList}
+	memberList = memberList}
 
   | Ast.ProtoBloc (p, b) -> 
     (* On type le prototype puis on analyse le bloc *)
