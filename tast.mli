@@ -101,7 +101,7 @@ and ins =
 | InsIf of expr * ins
 | InsIfElse of expr * ins * ins
 | InsWhile of expr * ins
-| InsFor of (expr list) * (expr option) * (expr list) * ins
+| InsFor of (expr list) * (expr) * (expr list) * ins
 | InsBloc of bloc
 | InsCout of expr_str list
 | InsReturn of expr option

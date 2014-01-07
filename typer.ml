@@ -393,12 +393,12 @@ let rec insTyper lenv ins = match ins.Ast.insCont with
     let nel2 = List.map (exprTyper lenv) el2 in
     let _, ni = insTyper lenv i in
     let neopt = match eopt with 
-      |None -> None
+      |None -> {exprTyp = TypInt; exprCont = ExprInt 1 (* = True *)}
       |Some e -> let ne = exprTyper lenv e in
 		 if not (typEq ne.exprTyp TypInt) then
 		   raise (Error ("Pas un type int comme condition", 
 				 ins.Ast.insLoc));
-		 Some ne
+		 ne
     in
     lenv, InsFor (nel1, neopt, nel2, ni)
   | Ast.InsBloc b -> 

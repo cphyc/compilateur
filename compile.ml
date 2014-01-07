@@ -211,16 +211,13 @@ let rec compile_ins lenv sp = function
     let compile_expr_list = 
       List.fold_left (fun code e -> code ++ compile_expr e lenv) nop in
     let init = compile_expr_list l1 in
-    let test = match e with
-    | Some e -> compile_expr e lenv 
-    | None -> li a0 vrai ++ push a0
-    in
+    let test = compile_expr e lenv in
     let modify = compile_expr_list l2 in
     let core, _ = compile_ins lenv sp i in
     let labtest, way_out = new_label (), new_label () in
     comment " initialisation de la boucle for" ++ init
-    ++ comment " test de sa condition" ++ label labtest ++ 
-      test ++ pop a0 ++ beqz a0 way_out
+    ++ comment " test de sa condition" ++ label labtest 
+    ++ test ++ pop a0 ++ beqz a0 way_out
     ++ comment " coeur de la boucle for" ++ core
     ++ comment " modification des paramètres testés" ++ modify ++ b labtest
     ++ comment " sortie de la boucle for" ++ label way_out, lenv
