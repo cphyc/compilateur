@@ -10,8 +10,9 @@ let classInheritances: (string, string list) Hashtbl.t = Hashtbl.create 17
 let classFields: (string, string) Hashtbl.t = Hashtbl.create 17
 let classCons: (string, typ list) Hashtbl.t = Hashtbl.create 17
 
-let methodsTable: (string * string, typ list) Hashtbl.t = Hashtbl.create 17
-let functionsTable: (string, typ list) Hashtbl.t = Hashtbl.create 17
+let methodsTable: (string * string, typ * typ list) Hashtbl.t = Hashtbl.create 17
+(* associe à une fonction son type et sa signature *)
+let functionsTable: (string, typ * typ list) Hashtbl.t = Hashtbl.create 17
 
 (* Simple fonction effectuant la conversion entre Ast et Tast *)
 let rec typConverter = function
@@ -39,13 +40,13 @@ let rec typBF = function
   | TypPointer p -> typBF p
   | _ -> false
 
-(* Distingue méthode et fonction et renvoie la classe *)
+(* Distingue méthode et fonction et renvoie la classe en option *)
 let rec classOfMethod q0 = match q0.Ast.qvarCont with
-  | Ast.QvarQident (Ast.Ident s) -> ""
-  | Ast.QvarQident (Ast.IdentIdent (s1, s2)) -> s1
+  | Ast.QvarQident (Ast.Ident s) -> Some s, None
+  | Ast.QvarQident (Ast.IdentIdent (s1, s2)) -> Some s1, Some s2
   | Ast.QvarPointer q -> classOfMethod q
   | Ast.QvarReference q -> classOfMethod q
-
+    
 let rec typEq t1 t2 = match t1, t2 with
   | TypNull, TypNull | TypVoid, TypVoid | TypInt, TypInt -> true
   | TypIdent s1, TypIdent s2 -> s1 == s2
@@ -71,7 +72,8 @@ let rec prevent_redeclaration env var = match var.Ast.varCont with
   | Ast.VarPointer v | Ast.VarReference v -> prevent_redeclaration env v
   
 let protoVarTTyper = function
-  | Ast.Qvar (typ, qvar) -> Qvar (typConverter typ.Ast.typCont, qvarTyper qvar.Ast.qvarCont)
+  | Ast.Qvar (typ, qvar) -> 
+    Qvar (typConverter typ.Ast.typCont, qvarTyper qvar.Ast.qvarCont)
   | Ast.Tident s -> assert false
   | Ast.TidentTident (s1, s2) -> assert false
 
@@ -90,12 +92,13 @@ let rec varTyper typ v0 = match v0.Ast.varCont with
 	varTyp=nv.varTyp }
 
 let rec argumentTyper lenv = function
-  | [] -> lenv, []
+  | [] -> lenv, [], []
   | arg::alist -> 
     let v = varTyper arg.Ast.argumentTyp.Ast.typCont  arg.Ast.argumentVar in
-    let nlenv, vlist = (argumentTyper lenv alist) in
+    let t = v.varTyp in
+    let nlenv, vlist, tlist = (argumentTyper lenv alist) in
     varUnique arg.Ast.argumentLoc v vlist;
-    (Smap.add v.varIdent v.varTyp nlenv), (v::vlist)
+    (Smap.add v.varIdent v.varTyp nlenv), (v::vlist), (t::tlist)
 
 (* Cette fonction verifie qu'on n'a pas redondance de variable *)
 and varUnique loc v0 = function
@@ -124,17 +127,16 @@ let memberConverter s = function
     List.iter aux la;
     MemberDeclVars la
   | Ast.VirtualProto (b,p) ->     
-    let _, argList = argumentTyper Smap.empty p.Ast.argumentList in
+    let _, argList, _ = argumentTyper Smap.empty p.Ast.argumentList in
     let l = Hashtbl.find_all classCons s in
     let lt = List.map (fun a -> a.varTyp) argList in
     let profEq p1 p2 = 
-      (List.length p1 == List.length p2)
-     && List.for_all2 typEq p1 p2 in
+      (List.length p1 == List.length p2) && List.for_all2 typEq p1 p2 in
     if List.exists (profEq lt) l
-    then raise (Error ("the same profile already exists", p.Ast.protoLoc))
+    then raise (Error ("ce profil a déjà été déclaré", p.Ast.protoLoc))
     else
       VirtualProto (b, {protoVar = protoVarTTyper p.Ast.protoVar ;
-			argumentList = argList})
+			argumentList = argList;protoKind = Class })
 
 let opTyper o = match o.Ast.opCont with 
 | Ast.OpEqual -> OpEqual
@@ -161,10 +163,11 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
   | Ast.True -> { exprTyp=TypInt; exprCont= ExprInt 1}
   | Ast.Null -> { exprTyp=TypNull; exprCont=Null }
   | Ast.ExprArrow (e, s) -> 
-    exprLVTyper lenv {Ast.exprLoc=exp.Ast.exprLoc;
-		      Ast.exprCont = Ast.ExprDot 
-	({Ast.exprCont=Ast.ExprStar e; Ast.exprLoc=exp.Ast.exprLoc},s)
-		     } 
+    exprLVTyper lenv 
+      { Ast.exprLoc=exp.Ast.exprLoc;
+	Ast.exprCont = Ast.ExprDot 
+	  ( {Ast.exprCont=Ast.ExprStar e; Ast.exprLoc=exp.Ast.exprLoc}, s)
+      }
   | Ast.ExprEqual (e1, e2) -> 
     let el, er = exprLVTyper lenv e1, exprTyper lenv e2 in
     if not (typIn er.exprTyp el.exprTyp) then
@@ -173,7 +176,10 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
       raise (Error ("Type numérique attendu.", e2.Ast.exprLoc))
     else
       { exprTyp = el.exprTyp; exprCont= ExprEqual (el, er) }
-  | Ast.ExprApply (e, el) -> assert false
+  | Ast.ExprApply (e, el) -> 
+    let ne = exprLVTyper lenv e in
+    { exprTyp = ne.exprTyp;
+      exprCont = ExprApply (ne, List.map (exprTyper lenv) el)}
   | Ast.ExprNew (s, el) -> assert false
   | Ast.ExprLIncr e -> 
     let ne = exprLVTyper lenv e in
@@ -243,8 +249,10 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
       with
 	Not_found -> try Hashtbl.find genv s 
 	  with Not_found ->
-	    raise 
-	      (Error ("Variable \""^s^"\" non déclarée", exp.Ast.exprLoc))
+	    try fst (Hashtbl.find functionsTable s)
+	    with Not_found -> 
+	      raise 
+		(Error ("Variable \""^s^"\" non déclarée", exp.Ast.exprLoc))
     in
     { exprTyp = ttyp; exprCont = ExprQident (Ident s) }
   | Ast.ExprQident Ast.IdentIdent (s1, s2) -> assert false
@@ -322,7 +330,6 @@ and insListTyper lenv = function
 
 (* =========================TYPAGE DES DÉCLARATIONS========================== *)
 
-
 let declTyper = function
   | Ast.DeclVars dv -> 
     let atyp = dv.Ast.declVarsTyp.Ast.typCont in
@@ -337,8 +344,9 @@ let declTyper = function
       | None -> []
       | Some l' -> l' in
     Hashtbl.add classInheritances c.Ast.className l;
-    DeclClass {className = c.Ast.className; supersOpt = c.Ast.supersOpt;
-     memberList = List.map (memberConverter c.Ast.className) c.Ast.memberList}
+    DeclClass 
+      { className = c.Ast.className; supersOpt = c.Ast.supersOpt;
+	memberList = List.map (memberConverter c.Ast.className) c.Ast.memberList}
 
   | Ast.ProtoBloc (p, b) -> 
     (* On type le prototype puis on analyse le bloc *)
@@ -346,43 +354,50 @@ let declTyper = function
        global ajouté aux types de tous les paramètres, ainsi que this si
        nécessaire*)
 
-    let env, argList = argumentTyper Smap.empty p.Ast.argumentList in
+    let env, argList, typList = argumentTyper Smap.empty p.Ast.argumentList in
 
-    (* On rajoute "return" et le type de retour dans l'environnement.
-    A priori, c'est sans danger vu qu'aucune variable ne s'appellera jamais
-    "return", mais je sais pas si c'est une bonne idée. Ça me paraît néanmoins
-    le plus simple pour transmettre le type de retour.*)
+    (* On ajoute la valeur de retour dans l'environnement local ce qui permet
+       d'avoir son type, mais on renvoie via $v0 *)
 
     match p.Ast.protoVar with
-    | Ast.Qvar (t,q) when (classOfMethod q) == "" -> (* Fonction *)
+    | Ast.Qvar (t,q) -> begin
       let t = typConverter t.Ast.typCont in
-      if typNum t || (typEq t TypVoid) then
-      ProtoBloc	
-	( 
-	  { protoVar = protoVarTTyper p.Ast.protoVar ;
-	    argumentList = argList },
-	  insListTyper (Smap.add "return" t env) b.Ast.blocCont;
-	)
-      else raise (Error ("la valeur de retour doit être numérique", 
-			 p.Ast.protoLoc))
-    | Ast.Qvar (t,q) -> (* Méthode *)
-      let t = typConverter t.Ast.typCont in
-      if typNum t || (typEq t TypVoid) then
-	ProtoBloc 
-	  ( 
-	    { protoVar = protoVarTTyper p.Ast.protoVar ;
-	      argumentList = argList },
-	    insListTyper (Smap.add "this" (TypIdent (classOfMethod q)) 
-			    (Smap.add "return" t env))
-	      b.Ast.blocCont;
-	  )
-      else raise (Error ("la valeur de retour doit être numérique", 
-			 p.Ast.protoLoc))
-    | Ast.Tident s -> (* Constructeur *)
+      let var = protoVarTTyper p.Ast.protoVar in
+      (* On distingue les methodes des classes de fonctions *)
+      match classOfMethod q with
+      | Some s, None -> (* Fonctions *)
+	(* On ajoute la fonction à la liste des fonctions *)
+	Hashtbl.add functionsTable s (t, typList);
+	if typNum t || (typEq t TypVoid) then
+	  ProtoBloc	
+	    ( 
+	      { protoVar = var;
+		argumentList = argList ; 
+		protoKind = Function },
+	      insListTyper (Smap.add "return" t env) b.Ast.blocCont;
+	    )
+	else raise (Error ("la valeur de retour doit être numérique", 
+			   p.Ast.protoLoc))
+      | Some s1, Some s2 -> (* Méthode *)
+	if typNum t || (typEq t TypVoid) then
+	  ProtoBloc 
+	    ( 
+	      { protoVar = var;
+		argumentList = argList ;
+		protoKind = Method s1 },
+	      insListTyper (Smap.add "this" (TypIdent s1) 
+			      (Smap.add "return" t env)) b.Ast.blocCont;
+	    )
+	else raise (Error ("la valeur de retour doit être numérique",
+			   p.Ast.protoLoc))
+      | None, _ -> assert false
+    end
+    | Ast.Tident s -> (* Constructeur de s *)
       ProtoBloc 
 	( 
 	  { protoVar = protoVarTTyper p.Ast.protoVar ;
-	    argumentList = argList },
+	    argumentList = argList;
+	    protoKind = Cons s },
 	  insListTyper (Smap.add "this" (TypIdent s) env) b.Ast.blocCont;
 	)
     | Ast.TidentTident (s1, s2) -> (* Constructeur *)
@@ -390,7 +405,8 @@ let declTyper = function
       ProtoBloc 
 	( 
 	  { protoVar = protoVarTTyper p.Ast.protoVar ;
-	    argumentList = argList },
+	    argumentList = argList;
+	    protoKind = Function },
 	  insListTyper (Smap.add "this" (TypIdent s2) env) b.Ast.blocCont;
 	)
       else raise (Error (s2^" n'est pas un constructeur", p.Ast.protoLoc))

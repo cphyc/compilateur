@@ -7,6 +7,9 @@ open Tast
 (* associe à un identificateur un couple de label * taille_de_la_variable *)
 let (genv : (string, (string * int list)) Hashtbl.t) = Hashtbl.create 17
 
+(* Table de hashage associant à un identifieur son label et sa taille *)
+let functionsTable: (string, (string * int)) Hashtbl.t = Hashtbl.create 17
+
 let vrai = 1
 let faux = 0
 (* Ensemble des chaines de caractère *)
@@ -31,12 +34,21 @@ let rec sizeof = function
 | TypIdent s -> assert false
 | TypPointer t -> sizeof t
 
+(* Parcourt l'arbre de syntaxe jusqu'à trouver l'identificateur d'une qvar *)
+let rec get_ident = function
+  | QvarQident q -> begin
+    match q with
+    | Ident s -> s
+    | IdentIdent (_,s) -> s (*On ne renvoie pas le nom de la classe, déjà présent *)
+  end
+  | QvarPointer qvar | QvarReference qvar -> get_ident qvar
+
 (* "pushn size" empile "size" octets sur la pile *)
 let pushn = sub sp sp oi
 
 (* () -> mips *)
-let save_fp_sp = comment " Sauvegarde de fp:" ++ push fp
-	    ++ comment " Sauvegarde de sp:" ++ push sp
+let save_fp_ra = comment " Sauvegarde de fp:" ++ push fp
+	    ++ comment " Sauvegarde de ra:" ++ push ra
 
 (* alloue de la mémoire pour les arguments d'un appel de fonction *)
 let rec allocate_args shift = function
@@ -259,9 +271,28 @@ let compile_decl codefun codemain = function
 	  in
 	  let lenv = allocate_args 0 p.argumentList in
 	  let codemain, _ = 
-	    List.fold_left aux (codemain ++ save_fp_sp, lenv) b in
+	    List.fold_left aux (codemain ++ save_fp_ra, lenv) b in
 	  codefun, codemain
-      | Qvar _ -> assert false
+      | Qvar (typ, q) -> 
+	(* On ajoute la fonction à la table des fonctions *)
+	let funlabel = new_label () in
+	let ident = get_ident q in
+	Hashtbl.add functionsTable ident (funlabel, sizeof typ);
+	
+	(* On sauvegarde fp et ra *)
+	let initcode = codefun ++ label funlabel ++ save_fp_ra in
+	
+	(* On compile le bloc *)
+	let aux (code, lenv) ins = 
+	  let inscode, nlenv = compile_ins lenv 8 ins in
+	  code ++ inscode, nlenv
+	in
+	let lenv = allocate_args 0 p.argumentList in
+	let codefun, _ = 
+	  List.fold_left aux (initcode, lenv) b in
+	(* On renvoie le codefun amelioré *)
+	codemain, codefun
+	  
       | Tident _ -> assert false
       | TidentTident _ -> assert false
     end
