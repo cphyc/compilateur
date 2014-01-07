@@ -34,6 +34,47 @@ let rec typIn t1 t2 = match t1, t2 with
   | TypPointer (TypIdent s1), TypPointer (TypIdent s2) -> subClass s1 s2
   | _ -> false
 
+(* Teste l'égalité de deux types *)
+let rec typEq t1 t2 = match t1, t2 with
+  | TypNull, TypNull | TypVoid, TypVoid | TypInt, TypInt -> true
+  | TypIdent s1, TypIdent s2 -> s1 == s2
+  | TypPointer nt1, TypPointer nt2 -> typEq nt1 nt2
+  | _ -> false
+
+(* teste si l1 est un plus petit profil que l2 *)
+let rec leqProf l1 l2 = match l1, l2 with
+  | [], [] -> true
+  | t1::q1, t2::q2 -> (typIn t1 t2) && leqProf q1 q2
+  | _ -> false
+
+(* teste l egalite entre deux profils *)
+let rec eqProf l1 l2 = match l1, l2 with
+  | [], [] -> true
+  | t1::q1, t2::q2 -> (typEq t1 t2) && eqProf q1 q2
+  | _ -> false
+
+(* Donne la liste des profils plus grands que *)
+let rec geqListProf p0 = function
+  | [] -> []
+  | p::l -> if leqProf p0 p then p::(geqListProf p0 l) else geqListProf p0 l
+
+(* Donne la liste des profils minima *)
+let minProf l0 =
+  (* min donne l'un des minima de l0 relatifs à p0 *)
+  let rec min p0 = function
+    | [] -> p0
+    | p::l -> let p' = min p0 l in
+	      if (not (eqProf p p')) && (leqProf p p') 
+	      then p else p' 
+  in
+  let rec minEns = function
+    | [] -> []
+    | p::l -> let l' = minEns l in
+	      let m = min p l0 in
+	      if List.exists (eqProf m) l' then l' else m::l'
+  in
+  minEns l0
+
 (* Type numérique : int, pointeur a.k.a typenull *)
 let typNum = function
   | TypInt | TypPointer _ | TypNull -> true
@@ -53,13 +94,6 @@ let rec classOfMethod q0 = match q0.Ast.qvarCont with
   | Ast.QvarPointer q -> classOfMethod q
   | Ast.QvarReference q -> classOfMethod q
     
-(* Teste l'égalité de deux types *)
-let rec typEq t1 t2 = match t1, t2 with
-  | TypNull, TypNull | TypVoid, TypVoid | TypInt, TypInt -> true
-  | TypIdent s1, TypIdent s2 -> s1 == s2
-  | TypPointer nt1, TypPointer nt2 -> typEq nt1 nt2
-  | _ -> false
-
 let rec qidentTyper = function
   | Ast.Ident s -> Ident s
   | Ast.IdentIdent (s1, s2) -> assert false
@@ -171,9 +205,20 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
     else
       { exprTyp = el.exprTyp; exprCont= ExprEqual (el, er) }
   | Ast.ExprApply (e, el) -> 
-    let ne = exprLVTyper lenv e in
-    { exprTyp = ne.exprTyp;
-      exprCont = ExprApply (ne, List.map (exprTyper lenv) el)}
+    let ne = exprLVTyper lenv e and nel = List.map (exprTyper lenv) el in
+    begin
+      match ne.exprCont with
+      | ExprQident (Ident s) 
+	  when (Hashtbl.mem functionsTable s)  -> (* Fonction *)
+	let lprof = snd (List.split (Hashtbl.find_all functionsTable s)) in
+	let p = List.map (fun e -> e.exprTyp) nel in
+	begin
+	match minProf (geqListProf p lprof) with
+	| [] -> raise (Error ("no profile corresponds", e.Ast.exprLoc))
+	| [p] -> { exprTyp = ne.exprTyp;  exprCont = ExprApply (ne, nel)}
+	| _ -> raise (Error ("several profiles correspond", e.Ast.exprLoc))
+	end
+    end
   | Ast.ExprNew (s, el) -> assert false
   | Ast.ExprLIncr e -> 
     let ne = exprLVTyper lenv e in
