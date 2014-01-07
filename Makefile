@@ -6,7 +6,7 @@ PARSER-OPTS =
 GENERATED = tokens.ml tokens.mli lexer.ml parser.ml parser.mli 
 BIN=minic++
 FLAGS=
-MARS=java -jar /opt/mars/Mars.jar
+MARS=java -jar ./Mars4_4.jar
 
 all: $(BIN)
 	@echo ''Compilation réussie.''

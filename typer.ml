@@ -365,7 +365,15 @@ let rec insTyper lenv ins = match ins.Ast.insCont with
     lenv,
     InsIfElse (exprTyper lenv e, ins1, ins2)
   | Ast.InsWhile (e, i) -> assert false
-  | Ast.InsFor (el1, eopt, el2, i) -> assert false
+  | Ast.InsFor (el1, eopt, el2, i) -> 
+    let tel1 = List.map (exprTyper lenv) el1 in
+    let teopt = match eopt with
+      | Some expr -> exprTyper lenv expr
+      | None -> {exprTyp = TypInt; exprCont = ExprInt 1 (* = True *)}
+    in
+    let tel2 = List.map (exprTyper lenv) el2 in
+    let _, tins = insTyper lenv ins in
+    lenv, InsFor (tel1, teopt, tel2, tins)    
   | Ast.InsBloc b -> 
     let insList = insListTyper lenv b.Ast.blocCont in
     (lenv, InsBloc insList)
