@@ -262,11 +262,11 @@ let rec insTyper lenv ins = match ins.Ast.insCont with
       match insDef with
       | Some Ast.InsDefExpr e -> 
 	let te = exprTyper lenv e in
-	if te.exprTyp != tvar.varTyp then
-	  raise (Error ("Types incompatibles.", ins.Ast.insLoc))
-	else
+	if typIn te.exprTyp tvar.varTyp then
 	  (Smap.add tvar.varIdent tvar.varTyp lenv),
 	  InsDef (tvar, Some (InsDefExpr te))
+	else
+	  raise (Error ("Types incompatibles.", ins.Ast.insLoc))
       | Some Ast.InsDefIdent (s, elist) -> assert false
       | None -> ( Smap.add tvar.varIdent tvar.varTyp lenv), InsDef (tvar, None) 
     end
