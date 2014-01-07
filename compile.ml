@@ -75,9 +75,8 @@ let compile_LVexpr lenv = function
     | Ident s ->
       begin
 	try let pos = Smap.find s lenv in (* Variable locale *)
-	    comment (" Décalage de la variable "^s) ++ li a0 pos 
-	    ++ comment (" Calcul de la position absolue") ++ add a0 a0 oreg fp
-	    ++ push a0
+	    comment (" variable "^s) ++ li a0 pos 
+	    ++ add a0 a0 oreg fp ++ push a0
 	with
 	  Not_found -> (* Variable globale *)
 	    let lab, _ = Hashtbl.find genv s in
@@ -109,7 +108,7 @@ let rec compile_expr ex lenv = match ex.exprCont with
 	    let lab, _ = Hashtbl.find genv s in
 	    lw a0 alab lab
 	in
-	comment (" chargement de la variable "^s) ++ instruction
+	comment (" chargement variable "^s) ++ instruction
 	++ push a0      
       | IdentIdent (s1,s2) -> assert false
     end
@@ -204,8 +203,9 @@ let rec compile_ins lenv sp = function
   | InsWhile (e,i) -> 
     let way_in, way_out = new_label(), new_label() in
     let ins1, _ = compile_ins lenv sp i in
-    comment " entrée de la boucle while" ++ label way_in ++ compile_expr e lenv 
-    ++ ins1
+    comment " entrée de la boucle while" ++ label way_in 
+    ++ comment " test du while" ++ compile_expr e lenv ++ pop a0 ++ beqz a0 way_out
+    ++ comment " coeur du while" ++ ins1 ++ b way_in
     ++ comment " sortie de la boucle while" ++ label way_out, lenv
   | InsFor (l1,e,l2,i) -> 
     let compile_expr_list = 
@@ -241,7 +241,7 @@ let rec compile_ins lenv sp = function
 	code ++ la a0 alab lab ++ li v0 4 ++ syscall, lenv
     in
     let inscode, nlenv = (List.fold_left aux (nop, lenv) l) in
-    let comm = comment " Affichage via cout" in
+    let comm = comment " cout" in
     comm ++ inscode, nlenv
   | InsReturn e -> assert false
 		 
