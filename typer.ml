@@ -430,6 +430,8 @@ let declTyper = function
       match classOfMethod q with
       | Some s, None -> (* Fonctions *)
 	(* On ajoute la fonction à la liste des fonctions *)
+	if Hashtbl.mem functionsTable s 
+	then raise (Error ("Fonction déjà définie",p.Ast.protoLoc));
 	Hashtbl.add functionsTable s (t, typList);
 	if typNum t || (typEq t TypVoid) then
 	  ProtoBloc	
