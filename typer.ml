@@ -6,6 +6,12 @@ module Smap = Map.Make(String)
 (* Environnement global : à chaque variable un type *)
 let genv: (string, typ) Hashtbl.t = Hashtbl.create 42
 
+let classFields: (string, string) Hashtbl.t = Hashtbl.create 17
+let classCons: (string, typ list) Hashtbl.t = Hashtbl.create 17
+
+let methodsTable: (string * string, typ list) Hashtbl.t = Hashtbl.create 17
+let functionsTable: (string, typ list) Hashtbl.t = Hashtbl.create 17
+
 (* Simple fonction effectuant la conversion entre Ast et Tast *)
 let rec typConverter = function
   | Ast.TypVoid -> TypVoid
@@ -23,6 +29,19 @@ let rec typIn t1 t2 = match t1, t2 with
 (* Type numérique : int, pointeur a.k.a typenull *)
 let typNum = function
   | TypInt | TypPointer _ | TypNull -> true
+  | _ -> false
+
+(* Distingue méthode et fonction et renvoie la classe *)
+let rec classOfMethod q0 = match q0.Ast.qvarCont with
+  | Ast.QvarQident (Ast.Ident s) -> ""
+  | Ast.QvarQident (Ast.IdentIdent (s1, s2)) -> s1
+  | Ast.QvarPointer q -> classOfMethod q
+  | Ast.QvarReference q -> classOfMethod q
+
+let rec typEq t1 t2 = match t1, t2 with
+  | TypNull, TypNull | TypVoid, TypVoid | TypInt, TypInt -> true
+  | TypIdent s1, TypIdent s2 -> s1 == s2
+  | TypPointer nt1, TypPointer nt2 -> typEq nt1 nt2
   | _ -> false
 
 let rec qidentTyper = function
@@ -77,6 +96,33 @@ and varUnique loc v0 = function
       raise (Error ("Variable redondante", loc))
     else varUnique loc v0 alist
 
+(* Pour convertir les membres d'une déclaration de classe  *)
+let memberConverter s = function
+  | Ast.MemberDeclVars dv ->
+    let la = (List.map (varTyper dv.Ast.declVarsTyp.Ast.typCont) 
+		dv.Ast.varList) in
+    let aux var =   
+      let v = var.varIdent in
+      let l = Hashtbl.find_all classFields s in
+      if List.mem v l 
+      then raise (Error ("already defined", dv.Ast.declVarsLoc))
+      else Hashtbl.add classFields s v
+    in
+    List.iter aux la;
+    MemberDeclVars la
+  | Ast.VirtualProto (b,p) ->     
+    let _, argList = argumentTyper Smap.empty p.Ast.argumentList in
+    let l = Hashtbl.find_all classCons s in
+    let lt = List.map (fun a -> a.varTyp) argList in
+    let profEq p1 p2 = 
+      (List.length p1 == List.length p2)
+     && List.for_all2 typEq p1 p2 in
+    if List.exists (profEq lt) l
+    then raise (Error ("the same profile already exists", p.Ast.protoLoc))
+    else
+      VirtualProto (b, {protoVar = protoVarTTyper p.Ast.protoVar ;
+			argumentList = argList})
+
 let opTyper o = match o.Ast.opCont with 
 | Ast.OpEqual -> OpEqual
 | Ast.OpDiff -> OpDiff
@@ -92,13 +138,20 @@ let opTyper o = match o.Ast.opCont with
 | Ast.OpAnd -> OpAnd
 | Ast.OpOr -> OpOr
 
+(* =========================TYPAGE DES EXPRESSIONS=========================== *)
+
+
 let rec exprTyper lenv exp = match exp.Ast.exprCont with
   | Ast.ExprInt i -> { exprTyp=TypInt; exprCont= ExprInt i }
   | Ast.This -> assert false
   | Ast.False -> { exprTyp=TypInt; exprCont= ExprInt 0}
   | Ast.True -> { exprTyp=TypInt; exprCont= ExprInt 1}
   | Ast.Null -> { exprTyp=TypNull; exprCont=Null }
-  | Ast.ExprArrow (e, s) -> assert false (* Sucre syntaxique à virer *)
+  | Ast.ExprArrow (e, s) -> 
+    exprLVTyper lenv {Ast.exprLoc=exp.Ast.exprLoc;
+		      Ast.exprCont = Ast.ExprDot 
+	({Ast.exprCont=Ast.ExprStar e; Ast.exprLoc=exp.Ast.exprLoc},s)
+		     } 
   | Ast.ExprEqual (e1, e2) -> 
     let el, er = exprLVTyper lenv e1, exprTyper lenv e2 in
     if not (typIn er.exprTyp el.exprTyp) then
@@ -133,7 +186,9 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
     | TypInt -> {exprTyp=TypInt; exprCont= ExprRDecr ne}
     | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
     end
-  | Ast.ExprAmpersand e -> assert false
+  | Ast.ExprAmpersand e -> 
+    let ne = exprLVTyper lenv e in
+    {exprTyp=TypPointer ne.exprTyp; exprCont= ExprAmpersand ne}
   | Ast.ExprExclamation e -> 
     let ne = exprTyper lenv e in
     begin match ne.exprTyp with
@@ -162,7 +217,7 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
     end
   | Ast.ExprParenthesis e -> 
     exprTyper lenv e
-  | e -> exprLVTyper lenv exp
+  | _ -> exprLVTyper lenv exp
 
 (* Pour les valeurs gauches *)
 and exprLVTyper lenv exp = match exp.Ast.exprCont with
@@ -192,6 +247,9 @@ let expr_strTyper env = function
   | Ast.ExprStrStr s -> ExprStrStr s
 
 
+
+(* =========================TYPAGE DES INSTRUCTIONS========================== *)
+
 let rec insTyper lenv ins = match ins.Ast.insCont with
   | Ast.InsSemicolon -> (lenv, InsSemicolon)
   | Ast.InsExpr e -> (lenv, InsExpr (exprTyper lenv e))
@@ -200,18 +258,17 @@ let rec insTyper lenv ins = match ins.Ast.insCont with
 	   puis on type l'instruction de définition *)
     prevent_redeclaration lenv var;
     begin
-      let ttyp = typConverter typ.Ast.typCont in
       let tvar = varTyper typ.Ast.typCont var in
       match insDef with
       | Some Ast.InsDefExpr e -> 
 	let te = exprTyper lenv e in
-	if te.exprTyp != ttyp then
+	if te.exprTyp != tvar.varTyp then
 	  raise (Error ("Types incompatibles.", ins.Ast.insLoc))
 	else
-	  (Smap.add tvar.varIdent ttyp lenv),
-	  InsDef (ttyp, tvar, Some (InsDefExpr te))
+	  (Smap.add tvar.varIdent tvar.varTyp lenv),
+	  InsDef (tvar, Some (InsDefExpr te))
       | Some Ast.InsDefIdent (s, elist) -> assert false
-      | None -> ( Smap.add tvar.varIdent ttyp lenv), InsDef (ttyp, tvar, None) 
+      | None -> ( Smap.add tvar.varIdent tvar.varTyp lenv), InsDef (tvar, None) 
     end
   | Ast.InsIf (e, i) -> 
     let _, ins = insTyper lenv i in
@@ -228,7 +285,12 @@ let rec insTyper lenv ins = match ins.Ast.insCont with
     (lenv, InsBloc insList)
   | Ast.InsCout s -> 
     (lenv, InsCout (List.map (expr_strTyper lenv) s))
-  | Ast.InsReturn eopt -> assert false
+  | Ast.InsReturn None -> (lenv, InsReturn None)
+  | Ast.InsReturn (Some e) -> 
+    let ne = exprTyper lenv e in
+    if typEq (Smap.find "return" lenv) ne.exprTyp then
+      (lenv, InsReturn (Some ne))
+    else raise (Error ("wrong return type", ins.Ast.insLoc))
 
 (* Typage des instructions.
    La fonction type au fur et à mesure les instructions en mettant à jour 
@@ -241,6 +303,11 @@ and insListTyper lenv = function
     let nlenv, tIns = insTyper lenv ins in
     tIns::(insListTyper nlenv insl)
 
+
+
+(* =========================TYPAGE DES DÉCLARATIONS========================== *)
+
+
 let declTyper = function
   | Ast.DeclVars dv -> 
     let atyp = dv.Ast.declVarsTyp.Ast.typCont in
@@ -250,19 +317,64 @@ let declTyper = function
 			    Hashtbl.add genv nv.varIdent nv.varTyp;
 			    nv) vlist)   
     
-  | Ast.DeclClass c -> assert false
+  | Ast.DeclClass c -> 
+    DeclClass {className = c.Ast.className; supersOpt = c.Ast.supersOpt;
+     memberList = List.map (memberConverter c.Ast.className) c.Ast.memberList}
+
   | Ast.ProtoBloc (p, b) -> 
     (* On type le prototype puis on analyse le bloc *)
     (* Dans un monde merveilleux, le contexte env renvoie le contexte
        global ajouté aux types de tous les paramètres, ainsi que this si
        nécessaire*)
+
     let env, argList = argumentTyper Smap.empty p.Ast.argumentList in
-    ProtoBloc 
-      ( 
-	{ protoVar = protoVarTTyper p.Ast.protoVar ;
-	  argumentList = argList; },
-	insListTyper env b.Ast.blocCont;
-      )
+
+    (* On rajoute "return" et le type de retour dans l'environnement.
+    A priori, c'est sans danger vu qu'aucune variable ne s'appellera jamais
+    "return", mais je sais pas si c'est une bonne idée. Ça me paraît néanmoins
+    le plus simple pour transmettre le type de retour.*)
+
+    match p.Ast.protoVar with
+    | Ast.Qvar (t,q) when (classOfMethod q) == "" -> (* Fonction *)
+      let t = typConverter t.Ast.typCont in
+      if typNum t then
+      ProtoBloc	
+	( 
+	  { protoVar = protoVarTTyper p.Ast.protoVar ;
+	    argumentList = argList },
+	  insListTyper (Smap.add "return" t env) b.Ast.blocCont;
+	)
+      else raise (Error ("la valeur de retour doit être numérique", 
+			 p.Ast.protoLoc))
+    | Ast.Qvar (t,q) -> (* Méthode *)
+      let t = typConverter t.Ast.typCont in
+      if typNum t then
+	ProtoBloc 
+	  ( 
+	    { protoVar = protoVarTTyper p.Ast.protoVar ;
+	      argumentList = argList },
+	    insListTyper (Smap.add "this" (TypIdent (classOfMethod q)) 
+			    (Smap.add "return" t env))
+	      b.Ast.blocCont;
+	  )
+      else raise (Error ("la valeur de retour doit être numérique", 
+			 p.Ast.protoLoc))
+    | Ast.Tident s -> (* Constructeur *)
+      ProtoBloc 
+	( 
+	  { protoVar = protoVarTTyper p.Ast.protoVar ;
+	    argumentList = argList },
+	  insListTyper (Smap.add "this" (TypIdent s) env) b.Ast.blocCont;
+	)
+    | Ast.TidentTident (s1, s2) -> (* Constructeur *)
+      if s1==s2 then
+      ProtoBloc 
+	( 
+	  { protoVar = protoVarTTyper p.Ast.protoVar ;
+	    argumentList = argList },
+	  insListTyper (Smap.add "this" (TypIdent s2) env) b.Ast.blocCont;
+	)
+      else raise (Error (s2^" n'est pas un constructeur", p.Ast.protoLoc))
 
 let file f = 
   {

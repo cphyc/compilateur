@@ -103,7 +103,6 @@ let rec compile_expr ex lenv = match ex.exprCont with
     end
   | ExprStar e -> assert false
   | ExprDot (e,s) -> assert false
-  | ExprArrow (e,s) -> assert false
   | ExprEqual (e1,e2) -> (* On compile l'expression e1, c'est une lvalue donc 
 			    le résultat est son adresse *)
     compile_LVexpr lenv e1.exprCont
@@ -170,9 +169,9 @@ let rec compile_ins lenv sp = function
   | InsSemicolon -> nop, lenv
   | InsExpr e -> (* le résultat est placé en sommet de pile *)
       compile_expr e lenv, lenv
-  | InsDef (t,v,op) ->
+  | InsDef (v,op) ->
     let comm = comment (" allocation de la variable "^v.varIdent) in
-    let s = sizeof t in
+    let s = sizeof v.varTyp in
     let nlenv = allocate_var v lenv in
     let rhs = match op with
       | None -> pushn s

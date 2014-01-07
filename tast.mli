@@ -61,7 +61,7 @@ and exprContT =
 | ExprQident of qident
 | ExprStar of expr
 | ExprDot of expr * string
-| ExprArrow of expr * string
+(* | ExprArrow of expr * string *)
 | ExprEqual of expr * expr
 | ExprApply of expr * (expr list)
 | ExprNew of string * (expr list)
@@ -94,7 +94,7 @@ and op =
 and ins =
 | InsSemicolon
 | InsExpr of expr
-| InsDef of typ * var * (insDef option)
+| InsDef of var * (insDef option)
 | InsIf of expr * ins
 | InsIfElse of expr * ins * ins
 | InsWhile of expr * ins
