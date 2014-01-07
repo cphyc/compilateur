@@ -34,7 +34,7 @@ let rec typEq t1 t2 = match t1, t2 with
   | _ -> false
 
 (* vérifie que t1 est un sous-type de t2 *)
-let rec typIn t1 t2 = match t1, t2 with
+let typIn t1 t2 = match t1, t2 with
   | TypInt, TypInt -> true
   | TypIdent s1, TypIdent s2 -> subClass s1 s2
   | TypNull, TypPointer _ -> true
@@ -332,7 +332,7 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 
 (* Pour les valeurs gauches *)
 and exprLVTyper lenv exp = match exp.Ast.exprCont with
-  | Ast.ExprQident Ast.Ident s ->
+  | Ast.ExprQident (Ast.Ident s) ->
     (* On a un identificateur, on cherche son type dans l'env local puis gal *)
     let ttyp = 
       try Smap.find s lenv
@@ -345,7 +345,7 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
 		(Error ("Variable \""^s^"\" non déclarée", exp.Ast.exprLoc))
     in
     { exprTyp = ttyp; exprCont = ExprQident (Ident s) }
-  | Ast.ExprQident Ast.IdentIdent (s1, s2) -> assert false
+  | Ast.ExprQident (Ast.IdentIdent (s1, s2)) -> assert false
   | Ast.ExprDot (e, s) ->    
     let ne = exprLVTyper lenv e in
     begin match ne.exprTyp with
@@ -514,6 +514,8 @@ let declTyper = function
 	else raise (Error ("la valeur de retour doit être numérique", 
 			   p.Ast.protoLoc))
       | Some s1, Some s2 -> (* Méthode *)
+      let nenv = List.fold_right (fun (c,t) -> fun e -> Smap.add c t e) 
+	(Hashtbl.find_all classFields s1) env in
 	if typNum t || (typEq t TypVoid) then
 	  ProtoBloc 
 	    ( 
@@ -521,28 +523,32 @@ let declTyper = function
 		argumentList = argList ;
 		protoKind = Method s1 },
 	      insListTyper (Smap.add "this" (TypIdent s1) 
-			      (Smap.add "return" t env)) b.Ast.blocCont;
+			      (Smap.add "return" t nenv)) b.Ast.blocCont;
 	    )
 	else raise (Error ("la valeur de retour doit être numérique",
 			   p.Ast.protoLoc))
       | None, _ -> assert false
     end
     | Ast.Tident s -> (* Constructeur de s *)
+      let nenv = List.fold_right (fun (c,t) -> fun e -> Smap.add c t e) 
+      (Hashtbl.find_all classFields s) env in
       ProtoBloc 
 	( 
 	  { protoVar = protoVarTTyper p.Ast.protoVar ;
 	    argumentList = argList;
 	    protoKind = Cons s },
-	  insListTyper (Smap.add "this" (TypIdent s) env) b.Ast.blocCont;
+	  insListTyper (Smap.add "this" (TypIdent s) nenv) b.Ast.blocCont;
 	)
     | Ast.TidentTident (s1, s2) -> (* Constructeur *)
+      let nenv = List.fold_right (fun (c,t) -> fun e -> Smap.add c t e) 
+      (Hashtbl.find_all classFields s2) env in
       if s1==s2 then
       ProtoBloc 
 	( 
 	  { protoVar = protoVarTTyper p.Ast.protoVar ;
 	    argumentList = argList;
 	    protoKind = Cons s2 },
-	  insListTyper (Smap.add "this" (TypIdent s2) env) b.Ast.blocCont;
+	  insListTyper (Smap.add "this" (TypIdent s2) nenv) b.Ast.blocCont;
 	)
       else raise (Error (s2^" n'est pas un constructeur", p.Ast.protoLoc))
 
