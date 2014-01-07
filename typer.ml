@@ -406,7 +406,7 @@ let declTyper = function
 	( 
 	  { protoVar = protoVarTTyper p.Ast.protoVar ;
 	    argumentList = argList;
-	    protoKind = Function },
+	    protoKind = Cons s2 },
 	  insListTyper (Smap.add "this" (TypIdent s2) env) b.Ast.blocCont;
 	)
       else raise (Error (s2^" n'est pas un constructeur", p.Ast.protoLoc))
