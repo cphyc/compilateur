@@ -26,20 +26,20 @@ let rec subClass c1 c2 =
   || (List.exists (fun c -> (subClass c c2)) 
 	(Hashtbl.find_all classInheritances c1))
 
-(* vérifie que t1 est un sous-type de t2 *)
-let rec typIn t1 t2 = match t1, t2 with
-  | TypInt, TypInt -> true
-  | TypIdent s1, TypIdent s2 -> subClass s1 s2
-  | TypNull, TypPointer _ -> true
-  | TypPointer (TypIdent s1), TypPointer (TypIdent s2) -> subClass s1 s2
-  | _ -> false
-
 (* Teste l'égalité de deux types *)
 let rec typEq t1 t2 = match t1, t2 with
   | TypNull, TypNull | TypVoid, TypVoid | TypInt, TypInt -> true
   | TypIdent s1, TypIdent s2 -> s1 == s2
   | TypPointer nt1, TypPointer nt2 -> typEq nt1 nt2
   | _ -> false
+
+(* vérifie que t1 est un sous-type de t2 *)
+let rec typIn t1 t2 = match t1, t2 with
+  | TypInt, TypInt -> true
+  | TypIdent s1, TypIdent s2 -> subClass s1 s2
+  | TypNull, TypPointer _ -> true
+  | TypPointer (TypIdent s1), TypPointer (TypIdent s2) -> subClass s1 s2
+  | t1, t2 -> typEq t1 t2
 
 (* teste si l1 est un plus petit profil que l2 *)
 let rec leqProf l1 l2 = match l1, l2 with
@@ -386,8 +386,7 @@ let rec insTyper lenv ins = match ins.Ast.insCont with
 	  (Smap.add tvar.varIdent tvar.varTyp lenv),
 	  InsDef (tvar, Some (InsDefExpr te))
 	  else raise (Error ("Type mal forme", ins.Ast.insLoc))
-	else
-	  raise (Error ("Types incompatibles.", ins.Ast.insLoc))
+	else raise (Error ("Types incompatibles.", ins.Ast.insLoc))
       | Some Ast.InsDefIdent (s, elist) -> assert false
       | None -> ( Smap.add tvar.varIdent tvar.varTyp lenv), InsDef (tvar, None) 
     end
