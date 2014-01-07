@@ -6,6 +6,7 @@ module Smap = Map.Make(String)
 (* Environnement global : à chaque variable un type *)
 let genv: (string, typ) Hashtbl.t = Hashtbl.create 42
 
+let classInheritances: (string, string list) Hashtbl.t = Hashtbl.create 17
 let classFields: (string, string) Hashtbl.t = Hashtbl.create 17
 let classCons: (string, typ list) Hashtbl.t = Hashtbl.create 17
 
@@ -29,6 +30,13 @@ let rec typIn t1 t2 = match t1, t2 with
 (* Type numérique : int, pointeur a.k.a typenull *)
 let typNum = function
   | TypInt | TypPointer _ | TypNull -> true
+  | _ -> false
+
+(* Vérifie qu'un type est bien formé *)
+let rec typBF = function
+  | TypInt -> true
+  | TypIdent s -> Hashtbl.mem classInheritances s
+  | TypPointer p -> typBF p
   | _ -> false
 
 (* Distingue méthode et fonction et renvoie la classe *)
@@ -101,7 +109,12 @@ let memberConverter s = function
   | Ast.MemberDeclVars dv ->
     let la = (List.map (varTyper dv.Ast.declVarsTyp.Ast.typCont) 
 		dv.Ast.varList) in
-    let aux var =   
+    let aux var = 
+      if not (typBF var.varTyp) 
+      then raise (Error ("mal formé", dv.Ast.declVarsLoc));
+      if var.varRef
+      then raise (Error ("les champs ne peuvent pas être des références", 
+		  dv.Ast.declVarsLoc));
       let v = var.varIdent in
       let l = Hashtbl.find_all classFields s in
       if List.mem v l 
@@ -208,6 +221,8 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
      | _ -> raise (Error ("Pas un type int", exp.Ast.exprLoc))
      end
   | Ast.ExprOp (e1, o, e2) -> 
+    (* Attention, il faut pouvoir comparer les pointeurs : pour == et !=, on 
+    doit vérifier des types num, pas int !!*)
     let ne1 = exprTyper lenv e1 and ne2 = exprTyper lenv e2 in
     begin match (ne1.exprTyp, ne2.exprTyp) with
     | TypInt, TypInt -> 
@@ -318,6 +333,10 @@ let declTyper = function
 			    nv) vlist)   
     
   | Ast.DeclClass c -> 
+    let l = match c.Ast.supersOpt with
+      | None -> []
+      | Some l' -> l' in
+    Hashtbl.add classInheritances c.Ast.className l;
     DeclClass {className = c.Ast.className; supersOpt = c.Ast.supersOpt;
      memberList = List.map (memberConverter c.Ast.className) c.Ast.memberList}
 
@@ -337,7 +356,7 @@ let declTyper = function
     match p.Ast.protoVar with
     | Ast.Qvar (t,q) when (classOfMethod q) == "" -> (* Fonction *)
       let t = typConverter t.Ast.typCont in
-      if typNum t then
+      if typNum t || (typEq t TypVoid) then
       ProtoBloc	
 	( 
 	  { protoVar = protoVarTTyper p.Ast.protoVar ;
@@ -348,7 +367,7 @@ let declTyper = function
 			 p.Ast.protoLoc))
     | Ast.Qvar (t,q) -> (* Méthode *)
       let t = typConverter t.Ast.typCont in
-      if typNum t then
+      if typNum t || (typEq t TypVoid) then
 	ProtoBloc 
 	  ( 
 	    { protoVar = protoVarTTyper p.Ast.protoVar ;
