@@ -6,11 +6,11 @@ module Smap = Map.Make(String)
 (* Environnement global : à chaque variable un type *)
 let genv: (string, typ) Hashtbl.t = Hashtbl.create 42
 
-let classInheritances: (string, string list) Hashtbl.t = Hashtbl.create 17
+let classInheritances: (string, string) Hashtbl.t = Hashtbl.create 17
 let classFields: (string, string) Hashtbl.t = Hashtbl.create 17
 let classCons: (string, typ list) Hashtbl.t = Hashtbl.create 17
 
-let methodsTable: (string * string, typ * typ list) Hashtbl.t = Hashtbl.create 17
+let methodsTable: (string * string, typ * typ list) Hashtbl.t = Hashtbl.create 7
 (* associe à une fonction son type et sa signature *)
 let functionsTable: (string, typ * typ list) Hashtbl.t = Hashtbl.create 17
 
@@ -20,12 +20,18 @@ let rec typConverter = function
   | Ast.TypInt -> TypInt
   | Ast.TypIdent s -> TypIdent s
 
+(* Teste si c1 est une sous-classe de c2 *)
+let rec subClass c1 c2 = 
+  (c1 == c2) 
+  || (List.exists (fun c -> (subClass c c2)) 
+	(Hashtbl.find_all classInheritances c1))
+
 (* vérifie que t1 est un sous-type de t2 *)
 let rec typIn t1 t2 = match t1, t2 with
   | TypInt, TypInt -> true
-  | TypIdent s1, TypIdent s2 -> assert false
+  | TypIdent s1, TypIdent s2 -> subClass s1 s2
   | TypNull, TypPointer _ -> true
-  | TypPointer t1', TypPointer t2' -> typIn t1' t2'
+  | TypPointer (TypIdent s1), TypPointer (TypIdent s2) -> subClass s1 s2
   | _ -> false
 
 (* Type numérique : int, pointeur a.k.a typenull *)
@@ -47,6 +53,7 @@ let rec classOfMethod q0 = match q0.Ast.qvarCont with
   | Ast.QvarPointer q -> classOfMethod q
   | Ast.QvarReference q -> classOfMethod q
     
+(* Teste l'égalité de deux types *)
 let rec typEq t1 t2 = match t1, t2 with
   | TypNull, TypNull | TypVoid, TypVoid | TypInt, TypInt -> true
   | TypIdent s1, TypIdent s2 -> s1 == s2
@@ -67,7 +74,8 @@ let rec qvarTyper = function
 let rec prevent_redeclaration env var = match var.Ast.varCont with
   | Ast.VarIdent s -> 
     if Smap.mem s env then
-      raise (Error ("Redéfinition illégale de la variable \""^s^"\".", var.Ast.varLoc))
+      raise (Error ("Redéfinition illégale de la variable \""^s^"\".", 
+		    var.Ast.varLoc))
     else ()
   | Ast.VarPointer v | Ast.VarReference v -> prevent_redeclaration env v
   
@@ -138,20 +146,6 @@ let memberConverter s = function
       VirtualProto (b, {protoVar = protoVarTTyper p.Ast.protoVar ;
 			argumentList = argList;protoKind = Class })
 
-let opTyper o = match o.Ast.opCont with 
-| Ast.OpEqual -> OpEqual
-| Ast.OpDiff -> OpDiff
-| Ast.OpLesser -> OpLesser
-| Ast.OpLesserEqual -> OpLesserEqual
-| Ast.OpGreater -> OpGreater
-| Ast.OpGreaterEqual -> OpGreaterEqual
-| Ast.OpPlus -> OpPlus
-| Ast.OpMinus -> OpMinus
-| Ast.OpTimes -> OpTimes
-| Ast.OpDivide -> OpDivide
-| Ast.OpModulo -> OpModulo
-| Ast.OpAnd -> OpAnd
-| Ast.OpOr -> OpOr
 
 (* =========================TYPAGE DES EXPRESSIONS=========================== *)
 
@@ -230,11 +224,35 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
     (* Attention, il faut pouvoir comparer les pointeurs : pour == et !=, on 
     doit vérifier des types num, pas int !!*)
     let ne1 = exprTyper lenv e1 and ne2 = exprTyper lenv e2 in
-    begin match (ne1.exprTyp, ne2.exprTyp) with
-    | TypInt, TypInt -> 
-      {exprTyp = TypInt; 
-       exprCont = ExprOp (exprTyper lenv e1, opTyper o, exprTyper lenv e2)}
-    | _ -> raise (Error ("Type int attendu", exp.Ast.exprLoc))
+    begin
+      let o, tint = match o.Ast.opCont with 
+	| Ast.OpEqual -> OpEqual, false
+	| Ast.OpDiff -> OpDiff, false
+	| Ast.OpLesser -> OpLesser, true
+	| Ast.OpLesserEqual -> OpLesserEqual, true
+	| Ast.OpGreater -> OpGreater, true
+	| Ast.OpGreaterEqual -> OpGreaterEqual, true
+	| Ast.OpPlus -> OpPlus, true
+	| Ast.OpMinus -> OpMinus, true
+	| Ast.OpTimes -> OpTimes, true
+	| Ast.OpDivide -> OpDivide, true
+	| Ast.OpModulo -> OpModulo, true
+	| Ast.OpAnd -> OpAnd, true
+	| Ast.OpOr -> OpOr, true 
+      in
+      if tint then 
+	match (ne1.exprTyp, ne2.exprTyp) with
+	| TypInt, TypInt -> 
+	  {exprTyp = TypInt; 
+	   exprCont = ExprOp (exprTyper lenv e1, o, exprTyper lenv e2)}
+	| _ -> raise (Error ("Type int attendu", exp.Ast.exprLoc))
+      else 
+	(*À mon avis, il y a une faute dans le sujet, parce qu'on doit pouvoir
+	  comparer un type pointeur au type null.*)
+	if (typNum ne1.exprTyp) (* && (typEq ne1.exprTyp ne2.exprTyp) *) then
+	  {exprTyp = TypInt; 
+	   exprCont = ExprOp (exprTyper lenv e1, o, exprTyper lenv e2)}
+	else raise (Error ("Type numerique attendu", exp.Ast.exprLoc))
     end
   | Ast.ExprParenthesis e -> 
     exprTyper lenv e
@@ -341,9 +359,9 @@ let declTyper = function
     
   | Ast.DeclClass c -> 
     let l = match c.Ast.supersOpt with
-      | None -> []
-      | Some l' -> l' in
-    Hashtbl.add classInheritances c.Ast.className l;
+      | None -> [""]
+      | Some l' -> ""::l' in
+    List.iter (Hashtbl.add classInheritances c.Ast.className) l;
     DeclClass 
       { className = c.Ast.className; supersOpt = c.Ast.supersOpt;
 	memberList = List.map (memberConverter c.Ast.className) c.Ast.memberList}
