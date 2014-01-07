@@ -57,7 +57,8 @@ let () =
     let tree = Parser.file Lexer.token buf in
     close_in f;
     if (not !parse_only) then 
-	let tree = Typer.file tree in ();
+	let tree = Typer.file tree in 
+	eprintf "\027[32mTypage réussi !\027[39m@.";
 	if (not !type_only) then
 	  Compile.compile tree ((Filename.chop_suffix !ifile ".cpp")^".s");
   with 
@@ -75,5 +76,5 @@ let () =
     exit 1
   | Typer.Error (c,loc) ->
     localisation loc;
-    eprintf "Erreur de type: %s@." c;
+    eprintf "\027[31mErreur de type: %s\027[39m@." c;
     exit 1
