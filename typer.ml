@@ -294,7 +294,7 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
       else 
 	(*À mon avis, il y a une faute dans le sujet, parce qu'on doit pouvoir
 	  comparer un type pointeur au type null.*)
-	if (typNum ne1.exprTyp) (* && (typEq ne1.exprTyp ne2.exprTyp) *) then
+	if (typNum ne1.exprTyp) && (typNum ne2.exprTyp) then
 	  {exprTyp = TypInt; 
 	   exprCont = ExprOp (exprTyper lenv e1, o, exprTyper lenv e2)}
 	else raise (Error ("Type numerique attendu", exp.Ast.exprLoc))
