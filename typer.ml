@@ -184,7 +184,12 @@ let memberConverter s = function
 
 let rec exprTyper lenv exp = match exp.Ast.exprCont with
   | Ast.ExprInt i -> { exprTyp=TypInt; exprCont= ExprInt i }
-  | Ast.This -> assert false
+  | Ast.This -> 
+    begin
+    try {exprTyp = Smap.find "this" lenv ;  exprCont = This}
+    with Not_found -> raise (Error("pas de this dans une fonction",
+				   exp.Ast.exprLoc))
+    end
   | Ast.False -> { exprTyp=TypInt; exprCont= ExprInt 0}
   | Ast.True -> { exprTyp=TypInt; exprCont= ExprInt 1}
   | Ast.Null -> { exprTyp=TypNull; exprCont=Null }
