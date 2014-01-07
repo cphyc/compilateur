@@ -399,6 +399,8 @@ let declTyper = function
     let vlist = dv.Ast.varList in
     DeclVars 
       ( List.map (fun var -> let nv = varTyper atyp var in
+			     	if Hashtbl.mem functionsTable nv.varIdent 
+	then raise (Error ("Variable déjà utilisée",dv.Ast.declVarsLoc));
 			    Hashtbl.add genv nv.varIdent nv.varTyp;
 			    nv) vlist)   
     
@@ -429,9 +431,11 @@ let declTyper = function
       (* On distingue les methodes des classes de fonctions *)
       match classOfMethod q with
       | Some s, None -> (* Fonctions *)
-	(* On ajoute la fonction à la liste des fonctions *)
 	if Hashtbl.mem functionsTable s 
 	then raise (Error ("Fonction déjà définie",p.Ast.protoLoc));
+	if Hashtbl.mem  genv s
+	then raise (Error ("Nom déjà utilisé",p.Ast.protoLoc)); 
+	(* On ajoute la fonction à la liste des fonctions *)
 	Hashtbl.add functionsTable s (t, typList);
 	if typNum t || (typEq t TypVoid) then
 	  ProtoBloc	
