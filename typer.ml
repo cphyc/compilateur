@@ -623,23 +623,21 @@ let declTyper = function
       | None, _ -> assert false
     end
     | Ast.Tident s -> (* Constructeur de s *)
-      let nenv = List.fold_right (fun (c,t) -> fun e -> Smap.add c t e) 
-      (Hashtbl.find_all classFields s) env in
       ProtoBloc 
 	( 
 	  { protoVar = var ;
 	    argumentList = argList},
-	  insListTyper (Smap.add "this" (TypIdent s) nenv) b.Ast.blocCont;
+	  insListTyper (Smap.add "this" (TypPointer (TypIdent s)) env) 
+	    b.Ast.blocCont;
 	)
     | Ast.TidentTident (s1, s2) -> (* Constructeur *)
-      let nenv = List.fold_right (fun (c,t) -> fun e -> Smap.add c t e) 
-      (Hashtbl.find_all classFields s2) env in
       if s1==s2 then
       ProtoBloc 
 	( 
 	  { protoVar = var ;
 	    argumentList = argList },
-	  insListTyper (Smap.add "this" (TypIdent s2) nenv) b.Ast.blocCont;
+	  insListTyper (Smap.add "this" (TypPointer (TypIdent s2)) env) 
+	    b.Ast.blocCont;
 	)
       else raise (Error (s2^" n'est pas un constructeur", p.Ast.protoLoc))
 
