@@ -142,8 +142,8 @@ expr:
 | DEQ { {opCont= OpEqual; opLoc= $startpos, $endpos} }
 | NEQ { {opCont= OpDiff; opLoc= $startpos, $endpos} }
 | LT { {opCont= OpLesser; opLoc= $startpos, $endpos} }
-| GT { {opCont= OpLesserEqual; opLoc= $startpos, $endpos} }
-| LE { {opCont= OpGreater; opLoc= $startpos, $endpos} }
+| GT { {opCont= OpGreater; opLoc= $startpos, $endpos} }
+| LE { {opCont= OpLesserEqual; opLoc= $startpos, $endpos} }
 | GE { {opCont= OpGreaterEqual; opLoc= $startpos, $endpos} }
 | PLUS { {opCont= OpPlus; opLoc= $startpos, $endpos} }
 | MINUS { {opCont= OpMinus; opLoc= $startpos, $endpos} }
