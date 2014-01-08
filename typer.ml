@@ -428,7 +428,7 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
       { exprTyp = ttyp; exprCont = ExprQident (Ident s) }
     else if Smap.mem "this" lenv then 	(* Champ dans le constructeur *)
       let cl = match Smap.find "this" lenv with
-	| TypIdent s -> s
+	| TypPointer (TypIdent s) -> s
 	| _ -> assert false
       in
       let ftyp = fieldType exp.Ast.exprLoc cl s in
@@ -611,7 +611,7 @@ let declTyper = function
 	    ( 
 	      { protoVar = var;
 		argumentList = argList},	   
-	      insListTyper (Smap.add "this" (TypIdent s1) 
+	      insListTyper (Smap.add "this" (TypPointer (TypIdent s1))
 			      (Smap.add "return" t env)) b.Ast.blocCont;
 	    )
 	else raise (Error ("la valeur de retour doit être numérique",
