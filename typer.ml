@@ -322,8 +322,7 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	    argList
 	  | _ -> raise (Error("Trop de profils",e'.Ast.exprLoc))
 	end
-  
-	
+ 	
       | _ -> raise 
 	(Error("Cette expression ne peut etre utilisée comme une fonction",
 	       e.Ast.exprLoc)) 
@@ -424,18 +423,18 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 (* Pour les valeurs gauches *)
 and exprLVTyper lenv exp = match exp.Ast.exprCont with
   | Ast.ExprQident (Ast.Ident s) ->
-    (* On a un identificateur, on cherche son type dans l'env local puis gal *)
-    let ttyp = 
-      try Smap.find s lenv
-      with
-	Not_found -> try Hashtbl.find genv s 
-	  with Not_found ->
-	    try fst (Hashtbl.find functionsTable s)
-	    with Not_found -> 
-	      raise 
-		(Error ("Variable \""^s^"\" non déclarée", exp.Ast.exprLoc))
-    in
-    { exprTyp = ttyp; exprCont = ExprQident (Ident s) }
+    if Smap.mem s lenv then
+      let ttyp = Smap.find s lenv in
+      { exprTyp = ttyp; exprCont = ExprQident (Ident s) }
+    else if Smap.mem "this" lenv then 	(* Champ dans le constructeur *)
+      let cl = match Smap.find "this" lenv with
+	| TypIdent s -> s
+	| _ -> assert false
+      in
+      let ftyp = fieldType exp.Ast.exprLoc cl s in
+      { exprTyp = ftyp; exprCont = ExprQident (Ident s) }
+    else
+      raise (Error ("Variable \""^s^"\" non déclarée", exp.Ast.exprLoc))
   | Ast.ExprQident (Ast.IdentIdent (s1, s2)) -> assert false
   | Ast.ExprDot (e, s) ->    
     let ne = exprLVTyper lenv e in
@@ -607,15 +606,13 @@ let declTyper = function
 	else raise (Error ("la valeur de retour doit être numérique", 
 			   p.Ast.protoLoc))
       | Some s1, Some s2 -> (* Méthode s2 de s1 *)
-	let nenv = List.fold_right (fun (c,t) -> fun e -> Smap.add c t e) 
-	  (Hashtbl.find_all classFields s1) env in
 	if typNum t || (typEq t TypVoid) then
 	  ProtoBloc 
 	    ( 
 	      { protoVar = var;
 		argumentList = argList},	   
 	      insListTyper (Smap.add "this" (TypIdent s1) 
-			      (Smap.add "return" t nenv)) b.Ast.blocCont;
+			      (Smap.add "return" t env)) b.Ast.blocCont;
 	    )
 	else raise (Error ("la valeur de retour doit être numérique",
 			   p.Ast.protoLoc))
