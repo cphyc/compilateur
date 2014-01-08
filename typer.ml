@@ -279,14 +279,12 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
       { exprTyp = el.exprTyp; exprCont= ExprEqual (el, er) }
 
   | Ast.ExprApply (e, el) -> 
-    let typ, ne, nel =  match e.Ast.exprCont with
+    begin
+      match e.Ast.exprCont with
       (* On distingue les fonctions des constructeurs, etc ... *)
-      | Ast.ExprQident (Ast.Ident s) (*function*) ->
-	let typ, protoTypList = try Hashtbl.find functionsTable s 
-	  with Not_found -> 
-	    raise (Error ("Identificateur de fonction non déclaré.",
-			  exp.Ast.exprLoc))
-	in
+      | Ast.ExprQident (Ast.Ident s) when Hashtbl.mem functionsTable s -> 
+	(* function *)
+	let typ, protoTypList =  Hashtbl.find functionsTable s in
 	let argList = List.map (fun expr -> exprTyper lenv expr) el in
 	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
 	
@@ -299,8 +297,35 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	  Error 
 	    ("Types des paramètres incompatibles avec le type de la fonction",
 	     exp.Ast.exprLoc));
-      (* Les types sont compatibles, on renvoie le tout *)
-	typ, {exprTyp = typ; exprCont = ExprQident (Ident s)}, argList
+	(* Les types sont compatibles, on renvoie le tout *)
+	{exprTyp = typ; exprCont = 
+	    ExprApply ({exprTyp = typ; exprCont = ExprQident (Ident s)}, 
+		       argList)}
+
+      | Ast.ExprQident (Ast.Ident s) -> 
+	if not (Smap.mem "this" lenv)
+	then raise (Error ("Identificateur de fonction non déclaré.",
+			   exp.Ast.exprLoc)); 
+        let className = match Smap.find "this" lenv with 
+	  | TypPointer (TypIdent s) -> s 
+	  | _ -> assert false in
+	let surclassList = Hashtbl.find_all classInheritances className in
+	let argList = List.map (exprTyper lenv) el in
+	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
+	let profList = List.concat 
+	  (List.map (fun c -> Hashtbl.find_all methodsTable (c,s))
+	  (className::surclassList)) in
+	begin
+	  match minProf2 (geqListProf2 argTypList profList) with
+	  | [] -> raise (Error("Aucun profil ne correspond", exp.Ast.exprLoc))
+	  | [((c,v),t),p] -> 
+	    {exprTyp = t ; 
+	     exprCont = ExprApply ({exprTyp = t; 
+				    exprCont = ExprQident (Ident s)}, 
+				   argList)}
+	  | _ -> raise (Error("Trop de profils",exp.Ast.exprLoc))
+	end
+		  
       | Ast.ExprQident (Ast.IdentIdent (s1,s2)) -> assert false
       | Ast.ExprDot (e', s) -> 
 	let ne' = exprTyper lenv e' in
@@ -318,23 +343,24 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	begin
 	  match minProf2 (geqListProf2 argTypList profList) with
 	  | [] -> raise (Error("Aucun profil ne correspond",e'.Ast.exprLoc))
-	  | [((c,v),t),p] -> t, {exprTyp = t; exprCont = ExprDot (ne', s)}, 
-	    argList
+	  | [((c,v),t),p] -> 
+	    {exprTyp = t ; 
+	     exprCont = ExprApply ({exprTyp = t; exprCont = ExprDot (ne', s)}, 
+	    argList)}
 	  | _ -> raise (Error("Trop de profils",e'.Ast.exprLoc))
 	end
  	
       | _ -> raise 
 	(Error("Cette expression ne peut etre utilisée comme une fonction",
 	       e.Ast.exprLoc)) 
-    in
-    {exprTyp = typ; exprCont = ExprApply (ne, nel)}
+    end
   | Ast.ExprNew (s, el) -> 
     let nel = List.map (exprTyper lenv) el in
     let lprof = Hashtbl.find_all classCons s in
     let p = List.map (fun e -> e.exprTyp) nel in
     begin
       match minProf (geqListProf p lprof) with
-      | [] -> raise (Error ("no profile corresponds2", exp.Ast.exprLoc))
+      | [] -> raise (Error ("no profile corresponds", exp.Ast.exprLoc))
       | [p] -> { exprTyp = TypPointer (TypIdent s);  
 		 exprCont = ExprNew (s, nel)}
       | _ -> raise (Error ("several profiles correspond", exp.Ast.exprLoc))
