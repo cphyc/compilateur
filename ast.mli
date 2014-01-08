@@ -59,13 +59,10 @@ and expr = {exprCont: exprContT; exprLoc: loc}
 and exprContT =
 | ExprInt of int
 | This
-| False
-| True
 | Null
 | ExprQident of qident
 | ExprStar of expr
 | ExprDot of expr * string
-| ExprArrow of expr * string
 | ExprEqual of expr * expr
 | ExprApply of expr * (expr list)
 | ExprNew of string * (expr list)

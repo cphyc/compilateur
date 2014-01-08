@@ -106,13 +106,14 @@ qident:
 expr:
 | i= CST { {exprCont= ExprInt i; exprLoc= $startpos, $endpos} }
 | THIS { {exprCont= This; exprLoc= $startpos, $endpos} }
-| FALSE { {exprCont= False; exprLoc= $startpos, $endpos} }
-| TRUE { {exprCont= True; exprLoc= $startpos, $endpos} }
+| FALSE { {exprCont= ExprInt 0; exprLoc= $startpos, $endpos} }
+| TRUE { {exprCont= ExprInt 1; exprLoc= $startpos, $endpos} }
 | NULL { {exprCont= Null; exprLoc= $startpos, $endpos} }
 | q= qident { {exprCont= ExprQident q; exprLoc= $startpos, $endpos} }
 | e= expr DOT i= IDENT { {exprCont=ExprDot (e,i); exprLoc= $startpos, $endpos} }
 | e= expr POINTER i= IDENT
-   { {exprCont= ExprArrow (e,i); exprLoc= $startpos, $endpos} }
+ { { exprCont = ExprDot({exprCont=ExprStar e; exprLoc=$startpos, $endpos}, i);
+     exprLoc= $startpos, $endpos} }
 | e1= expr EQ e2= expr
    { {exprCont= ExprEqual (e1,e2); exprLoc= $startpos, $endpos } }
 | e= expr LPAREN elist= separated_list(COMMA, expr) RPAREN

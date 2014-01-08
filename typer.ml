@@ -251,15 +251,7 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
     with Not_found -> raise (Error("pas de this dans une fonction",
 				   exp.Ast.exprLoc))
     end
-  | Ast.False -> { exprTyp=TypInt; exprCont= ExprInt 0}
-  | Ast.True -> { exprTyp=TypInt; exprCont= ExprInt 1}
   | Ast.Null -> { exprTyp=TypNull; exprCont=Null } 
-  | Ast.ExprArrow (e, s) -> 
-    exprTyper lenv 
-      { Ast.exprLoc = exp.Ast.exprLoc;
-	Ast.exprCont = Ast.ExprDot 
-	  ( {Ast.exprCont=Ast.ExprStar e; Ast.exprLoc=exp.Ast.exprLoc}, s)
-      }
   | Ast.ExprEqual (e1, e2) -> 
     let el, er = exprLVTyper lenv e1, exprTyper lenv e2 in
     if not (typIn er.exprTyp el.exprTyp) then

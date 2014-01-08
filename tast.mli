@@ -54,14 +54,10 @@ and expr = {exprTyp: typ; exprCont: exprContT}
 and exprContT =
 | ExprInt of int
 | This
-(*| False
-| True
-^ ils ont été enlevés lors de l'analyse de type*)
 | Null
 | ExprQident of qident
 | ExprStar of expr
 | ExprDot of expr * string
-(* | ExprArrow of expr * string *)
 | ExprEqual of expr * expr
 | ExprApply of expr * (expr list)
 | ExprNew of string * (expr list)
