@@ -10,7 +10,8 @@ let classInheritances: (string, string) Hashtbl.t = Hashtbl.create 17
 let classFields: (string, string * typ) Hashtbl.t = Hashtbl.create 17
 let classCons: (string, typ list) Hashtbl.t = Hashtbl.create 17
 
-let methodsTable: (string * string, (bool * typ) * typ list) 
+(*  (class, method), ((class, virtual), return type), profile *)
+let methodsTable: (string * string, ((string * bool) * typ) * typ list) 
     Hashtbl.t = Hashtbl.create 7
 (* associe à une fonction son type et sa signature *)
 let functionsTable: (string, typ * typ list) Hashtbl.t = Hashtbl.create 17
@@ -59,6 +60,14 @@ let rec geqListProf p0 = function
   | [] -> []
   | p::l -> if leqProf p0 p then p::(geqListProf p0 l) else geqListProf p0 l
 
+(* La même, avec le droit de mettre des infos à gauche (type renvoyé et
+   virtualité) *)
+let rec geqListProf2 p0 = function
+  | [] -> []
+  | (a,p)::l -> if leqProf p0 p then (a,p)::(geqListProf2 p0 l) 
+    else geqListProf2 p0 l
+
+
 (* Donne la liste des profils minima *)
 let minProf l0 =
   (* min donne l'un des minima de l0 relatifs à p0 *)
@@ -73,6 +82,22 @@ let minProf l0 =
     | p::l -> let l' = minEns l in
 	      let m = min p l0 in
 	      if List.exists (eqProf m) l' then l' else m::l'
+  in
+  minEns l0
+
+(* Idem *)
+let minProf2 l0 =
+  let rec min (a0,p0) = function
+    | [] -> (a0,p0)
+    | (a,p)::l -> let (a',p') = min (a0,p0) l in
+	      if (not (eqProf p p')) && (leqProf p p') 
+	      then (a,p) else (a',p') 
+  in
+  let rec minEns = function
+    | [] -> []
+    | (a,p)::l -> let l' = minEns l in
+	      let (b,m) = min (a,p) l0 in
+	      if List.exists (fun (c,n) -> eqProf n m) l' then l' else (b,m)::l'
   in
   minEns l0
 
@@ -197,7 +222,7 @@ let memberConverter s0 = function
       then raise (Error ("ce profil a déjà été déclaré", p.Ast.protoLoc));
       let t' = typConverter t.Ast.typCont 
       and q' = qvarTyper q.Ast.qvarCont in
-      Hashtbl.add methodsTable (s0,s) ((b,t'), lt);
+      Hashtbl.add methodsTable (s0,s) (((s0,b),t'), lt);
       VirtualProto (b, {protoVar = Function (t',q'); argumentList = argList;})
 
     | Ast.Tident s -> assert false
@@ -231,7 +256,7 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
   | Ast.Null -> { exprTyp=TypNull; exprCont=Null } 
   | Ast.ExprArrow (e, s) -> 
     exprTyper lenv 
-      { Ast.exprLoc=exp.Ast.exprLoc;
+      { Ast.exprLoc = exp.Ast.exprLoc;
 	Ast.exprCont = Ast.ExprDot 
 	  ( {Ast.exprCont=Ast.ExprStar e; Ast.exprLoc=exp.Ast.exprLoc}, s)
       }
@@ -244,35 +269,56 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
     else
       { exprTyp = el.exprTyp; exprCont= ExprEqual (el, er) }
 
-  | Ast.ExprApply (e, el) -> let typ, ne, nel = ( match e.Ast.exprCont with
-    (* On distingue les fonctions des constructeurs, etc ... *)
-    | Ast.ExprQident (Ast.Ident s) (*function*) ->
-      let typ, protoTypList = try Hashtbl.find functionsTable s 
-	with Not_found -> raise (Error ("Identificateur de fonction non déclaré.",
-				       exp.Ast.exprLoc))
-      in
-      let argList = List.map (fun expr -> exprTyper lenv expr) el in
-      let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
-
-      (* On vérifie que la liste des types des expressions est bien inclus dans
-	 typlist *)
-      let is_ok = List.for_all2 
-	(fun argTyp protoTyp -> typIn argTyp protoTyp) argTypList protoTypList in
-      if not is_ok then raise ( 
-	Error ("Types des paramètres incompatibles avec le type de la fonction",
-	       exp.Ast.exprLoc));
+  | Ast.ExprApply (e, el) -> 
+    let typ, ne, nel =  match e.Ast.exprCont with
+      (* On distingue les fonctions des constructeurs, etc ... *)
+      | Ast.ExprQident (Ast.Ident s) (*function*) ->
+	let typ, protoTypList = try Hashtbl.find functionsTable s 
+	  with Not_found -> 
+	    raise (Error ("Identificateur de fonction non déclaré.",
+			  exp.Ast.exprLoc))
+	in
+	let argList = List.map (fun expr -> exprTyper lenv expr) el in
+	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
+	
+	(* On vérifie que la liste des types des expressions 
+	   est bien inclus dans typlist *)
+	let is_ok = List.for_all2 
+	  (fun argTyp protoTyp -> typIn argTyp protoTyp) 
+	  argTypList protoTypList in
+	if not is_ok then raise ( 
+	  Error 
+	    ("Types des paramètres incompatibles avec le type de la fonction",
+	     exp.Ast.exprLoc));
       (* Les types sont compatibles, on renvoie le tout *)
-      typ, {exprTyp = typ; exprCont = ExprQident (Ident s)}, argList
-    | Ast.ExprQident (Ast.IdentIdent (s1,s2)) -> assert false
-    | Ast.ExprDot (e', s) -> assert false
-      (* Format.eprintf "coucou"; *)
-      (* let ne' = exprTyper lenv e' in *)
-      (* let c = match ne'.exprTyp with *)
-      (* 	| TypIdent s -> s *)
-      (* 	| _ -> raise (Error ("pas type classe", exp.Ast.exprLoc)) *)
-    | _ -> raise (Error("Cette expression ne peut etre utilisée comme une fonction",
-		  e.Ast.exprLoc))
-    ) in
+	typ, {exprTyp = typ; exprCont = ExprQident (Ident s)}, argList
+      | Ast.ExprQident (Ast.IdentIdent (s1,s2)) -> assert false
+      | Ast.ExprDot (e', s) -> 
+	let ne' = exprTyper lenv e' in
+	let className = match ne'.exprTyp with
+	  | TypIdent  s -> s
+	  | _ -> raise (Error ("Ce n'est pas une classe",e'.Ast.exprLoc))
+	in
+	let surclassList = Hashtbl.find_all classInheritances className in
+	let argList = List.map (exprTyper lenv) el in
+	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
+	
+	let profList = List.concat 
+	  (List.map (fun c -> Hashtbl.find_all methodsTable (c,s))
+	  (className::surclassList)) in
+	begin
+	  match minProf2 (geqListProf2 argTypList profList) with
+	  | [] -> raise (Error("Aucun profil ne correspond",e'.Ast.exprLoc))
+	  | [((c,v),t),p] -> t, {exprTyp = t; exprCont = ExprDot (ne', s)}, 
+	    argList
+	  | _ -> raise (Error("Trop de profils",e'.Ast.exprLoc))
+	end
+  
+	
+      | _ -> raise 
+	(Error("Cette expression ne peut etre utilisée comme une fonction",
+	       e.Ast.exprLoc)) 
+    in
     {exprTyp = typ; exprCont = ExprApply (ne, nel)}
   | Ast.ExprNew (s, el) -> 
     let nel = List.map (exprTyper lenv) el in
