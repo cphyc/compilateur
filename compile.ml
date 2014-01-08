@@ -266,7 +266,15 @@ let rec compile_ins lenv sp = function
     let inscode, nlenv = (List.fold_left aux (nop, lenv) l) in
     let comm = comment " cout" in
     comm ++ inscode, nlenv
-  | InsReturn e -> assert false
+  | InsReturn eopt -> 
+    let expr = match eopt with 
+      | Some e -> compile_expr e lenv
+      | None -> nop in
+        comment " quitte la fonction, résultat dans v0"
+    ++  expr
+    ++  pop v0
+    ++  restore_ra_fp
+    ++  jr ra, lenv
 		 
 let compile_decl codefun codemain = function
   | DeclVars vlist -> 

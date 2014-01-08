@@ -40,8 +40,16 @@ clean:
 	rm -f .depend
 	ocamldep *.ml *.mli > .depend
 
-test: $(BIN) 
-	./$(BIN) test.cpp
-	$(MARS) test.s | tail -n +3
+test: $(BIN) test.cpp
+	@echo "########## Sortie pour le fichier compilé par minic++ :"	
+	@./$(BIN) test.cpp
+	@$(MARS) test.s | tail -n +3
+
+g++: test.cpp
+	@echo "########## Sortie pour le fichier compilé par gcc :"
+	@g++ test.cpp -o /tmp/test -fpermissive
+	@/tmp/test
+
+compare: test g++
 
 include .depend
