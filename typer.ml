@@ -106,7 +106,6 @@ let fieldType l c f =
   let rec aux c' = 
     if (List.mem_assoc f (Hashtbl.find_all classFields c')) then
       [(List.assoc f (Hashtbl.find_all classFields c'))]
-      @ List.concat (List.map aux (Hashtbl.find_all classInheritances c'))
     else
       List.concat (List.map aux (Hashtbl.find_all classInheritances c'))
   in
