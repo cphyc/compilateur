@@ -5,10 +5,11 @@ open Tast
 
 (* Environnement global *)
 (* associe à un identificateur un couple de label * taille_de_la_variable *)
-let (genv : (string, (string * int list)) Hashtbl.t) = Hashtbl.create 17
+let (genv : (string, string * int list) Hashtbl.t) = Hashtbl.create 17
 
-(* Table de hashage associant à un identifieur son label et sa taille *)
-let functionsTable: (string, (string * int)) Hashtbl.t = Hashtbl.create 17
+(* Table de hashage associant à un identifieur sa taille, son label et la taille 
+   de ses args *)
+let functionsTable: (string, int * string * int list) Hashtbl.t = Hashtbl.create 17
 
 let vrai = 1
 let faux = 0
@@ -126,7 +127,24 @@ let rec compile_expr ex lenv = match ex.exprCont with
     ++ comment " calcul de la valeur droite" ++ compile_expr e2 lenv 
     ++ pop a1 ++ pop a0 
     ++ comment " sauvegarde de la valeur" ++ sw a1 areg (0, a0)
-  | ExprApply (e,l) -> assert false
+  | ExprApply (e,l) -> (
+    match e.exprCont with
+    | ExprQident (Ident s) -> (* appel de fonction *)
+      let size, funlab, sizeList = Hashtbl.find functionsTable s in
+      let codeArgs = 
+	List.fold_left (fun code expr -> code ++ compile_expr expr lenv) nop l in
+          comment (" appel de la fonction "^s)
+      ++  comment " construction de la pile"
+      ++  codeArgs
+      ++  jal funlab
+      ++  comment " on met le résultat sur la pile"
+      ++  push v0
+    | ExprQident (IdentIdent (s1,s2)) when s1==s2 -> assert false(* appel de cons *)
+    | ExprQident (IdentIdent (s1,s2)) -> assert false (* appel de méthode *)
+    | ExprParenthesis e -> assert false (* compile_expr lenv {ExprApply (e,l)} *)
+    | ExprDot _ -> assert false
+    | _ -> assert false
+  )
   | ExprNew (s, l) -> assert false
   (* TODO: Vérifier que ça ne change rien dans notre grammaire *)
   | ExprRIncr e | ExprLIncr e -> compile_expr e lenv
@@ -283,7 +301,8 @@ let compile_decl codefun codemain = function
 	  | s -> 
 	    (* On ajoute la fonction à la table des fonctions *)
 	    let funlabel = new_label () in
-	    Hashtbl.add functionsTable s (funlabel, sizeof typ);
+	    let sizeList = List.map (fun arg -> sizeof arg.varTyp) argList in
+	    Hashtbl.add functionsTable s (sizeof typ, funlabel, sizeList);
 	
 	    (* On compile le bloc *)
 	    let aux (code, lenv) ins = 
@@ -296,9 +315,12 @@ let compile_decl codefun codemain = function
 	          codefun
 	      ++  comment (" fonction "^s)
 	      ++  label funlabel
+	      ++  move fp sp
+	      ++  save_fp_ra
 	      ++  ins_code
-	      ++  comment "Restauration de ra et fp"
+	      ++  comment " restauration de ra et fp"
 	      ++  restore_ra_fp
+	      ++  comment " retour à la case départ"
 	      ++  jr ra
 	    in
 	    (* On renvoie le codefun amelioré *)

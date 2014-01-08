@@ -243,37 +243,37 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
       raise (Error ("Type numérique attendu.", e2.Ast.exprLoc))
     else
       { exprTyp = el.exprTyp; exprCont= ExprEqual (el, er) }
-  | Ast.ExprApply (e, el) -> assert false
-    (* begin *)
-    (* match e.Ast.exprCont with *)
-    (* | Ast.ExprQident (Ast.Ident s) -> assert false *)
-    (* | Ast.ExprQident (Ast.IdentIdent (s1,s2)) -> assert false *)
-    (* | Ast.ExprDot (e', s) -> assert false *)
-    (*   Format.eprintf "coucou"; *)
-    (*   let ne' = exprTyper lenv e' in *)
-    (*   let c = match ne'.exprTyp with  *)
-    (* 	| TypIdent s -> s  *)
-    (* 	| _ -> raise (Error ("pas type classe", exp.Ast.exprLoc)) *)
-    (*   in *)
-    (*   ne' *)
-      
-    (* end *)
-    
-    (* let ne = exprLVTyper lenv e and nel = List.map (exprTyper lenv) el in *)
-    (* begin *)
-    (*   match ne.exprCont with *)
-    (*   | ExprQident (Ident s) -> assert false *)
-      (* Fonction *)
-	(* when (Hashtbl.mem functionsTable s) *)
-	(* let lprof = snd (List.split (Hashtbl.find_all functionsTable s)) in *)
-	(* let p = List.map (fun e -> e.exprTyp) nel in *)
-	(* begin *)
-	(*   match minProf (geqListProf p lprof) with *)
-	(*   | [] -> raise (Error ("no profile corresponds", e.Ast.exprLoc)) *)
-	(*   | [p] -> { exprTyp = ne.exprTyp;  exprCont = ExprApply (ne, nel)} *)
-	(*   | _ -> raise (Error ("several profiles correspond", e.Ast.exprLoc)) *)
-	(* end *)
-      (* | _ -> assert false *)
+
+  | Ast.ExprApply (e, el) -> let typ, ne, nel = ( match e.Ast.exprCont with
+    (* On distingue les fonctions des constructeurs, etc ... *)
+    | Ast.ExprQident (Ast.Ident s) (*function*) ->
+      let typ, protoTypList = try Hashtbl.find functionsTable s 
+	with Not_found -> raise (Error ("Identificateur de fonction non déclaré.",
+				       exp.Ast.exprLoc))
+      in
+      let argList = List.map (fun expr -> exprTyper lenv expr) el in
+      let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
+
+      (* On vérifie que la liste des types des expressions est bien inclus dans
+	 typlist *)
+      let is_ok = List.for_all2 
+	(fun argTyp protoTyp -> typIn argTyp protoTyp) argTypList protoTypList in
+      if not is_ok then raise ( 
+	Error ("Types des paramètres incompatibles avec le type de la fonction",
+	       exp.Ast.exprLoc));
+      (* Les types sont compatibles, on renvoie le tout *)
+      typ, {exprTyp = typ; exprCont = ExprQident (Ident s)}, argList
+    | Ast.ExprQident (Ast.IdentIdent (s1,s2)) -> assert false
+    | Ast.ExprDot (e', s) -> assert false
+      (* Format.eprintf "coucou"; *)
+      (* let ne' = exprTyper lenv e' in *)
+      (* let c = match ne'.exprTyp with *)
+      (* 	| TypIdent s -> s *)
+      (* 	| _ -> raise (Error ("pas type classe", exp.Ast.exprLoc)) *)
+    | _ -> raise (Error("Cette expression ne peut etre utilisée comme une fonction",
+		  e.Ast.exprLoc))
+    ) in
+    {exprTyp = typ; exprCont = ExprApply (ne, nel)}
   | Ast.ExprNew (s, el) -> 
     let nel = List.map (exprTyper lenv) el in
     let lprof = Hashtbl.find_all classCons s in

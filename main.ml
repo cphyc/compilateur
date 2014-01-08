@@ -76,5 +76,5 @@ let () =
     exit 1
   | Typer.Error (c,loc) ->
     localisation loc;
-    eprintf "\027[31mErreur de type: %s\027[39m@." c;
+    eprintf "Erreur de type: %s@." c;
     exit 1
