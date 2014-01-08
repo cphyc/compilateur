@@ -503,7 +503,23 @@ let rec insTyper lenv ins = match ins.Ast.insCont with
 	  InsDef (tvar, Some (InsDefExpr te))
 	  else raise (Error ("Type mal forme", ins.Ast.insLoc))
 	else raise (Error ("Types incompatibles.", ins.Ast.insLoc))
-      | Some Ast.InsDefIdent (s, elist) -> assert false
+      | Some Ast.InsDefIdent (s, elist) -> 
+	let s0 = match tvar.varTyp with
+	  | TypIdent s -> s
+	  | _ -> raise (Error ("pas une classe", ins.Ast.insLoc))
+	in
+	if s != s0 then raise (Error ("pas la meme classe", ins.Ast.insLoc));
+	let nel = List.map (exprTyper lenv) elist in
+	let lprof = Hashtbl.find_all classCons s in
+	let p = List.map (fun e -> e.exprTyp) nel in
+	begin
+	  match minProf (geqListProf p lprof) with
+	  | [] -> raise (Error ("no profile corresponds", ins.Ast.insLoc))
+	  | [p] -> (Smap.add tvar.varIdent tvar.varTyp lenv),
+	    InsDef (tvar, Some (InsDefIdent (s, nel)))
+	  | _ -> raise (Error ("several profiles correspond", 
+			       ins.Ast.insLoc))
+	end
       | None -> ( Smap.add tvar.varIdent tvar.varTyp lenv), InsDef (tvar, None) 
     end
   | Ast.InsIf (e, i) -> 
