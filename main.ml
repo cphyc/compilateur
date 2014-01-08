@@ -58,7 +58,7 @@ let () =
     close_in f;
     if (not !parse_only) then 
 	let tree = Typer.file tree in 
-	eprintf "Typage réussi !@.";
+	eprintf "\027[32mTypage réussi !\027[39m@.";
 	if (not !type_only) then
 	  Compile.compile tree ((Filename.chop_suffix !ifile ".cpp")^".s");
   with 

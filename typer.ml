@@ -10,7 +10,8 @@ let classInheritances: (string, string) Hashtbl.t = Hashtbl.create 17
 let classFields: (string, string * typ) Hashtbl.t = Hashtbl.create 17
 let classCons: (string, typ list) Hashtbl.t = Hashtbl.create 17
 
-let methodsTable: (string * string, typ * typ list) Hashtbl.t = Hashtbl.create 7
+let methodsTable: (string * string, (bool * typ) * typ list) 
+    Hashtbl.t = Hashtbl.create 7
 (* associe à une fonction son type et sa signature *)
 let functionsTable: (string, typ * typ list) Hashtbl.t = Hashtbl.create 17
 
@@ -87,8 +88,7 @@ let fieldType l c f =
   match aux c with
   | [] -> raise (Error ("ce champ n'existe pas", l))
   | [t] -> t
-  | _ -> raise (Error ("ce champ est ambigu", l))
-
+  | _ -> raise (Error ("ce champ est ambigu", l)) 
 
 (* Type numérique : int, pointeur a.k.a typenull *)
 let typNum = function
@@ -149,7 +149,7 @@ let rec varTyper typ v0 = match v0.Ast.varCont with
 let rec argumentTyper lenv = function
   | [] -> lenv, [], []
   | arg::alist -> 
-    let v = varTyper arg.Ast.argumentTyp.Ast.typCont  arg.Ast.argumentVar in
+    let v = varTyper arg.Ast.argumentTyp.Ast.typCont arg.Ast.argumentVar in
     let t = v.varTyp in
     let nlenv, vlist, tlist = (argumentTyper lenv alist) in
     varUnique arg.Ast.argumentLoc v vlist;
@@ -163,7 +163,7 @@ and varUnique loc v0 = function
     else varUnique loc v0 alist
 
 (* Pour convertir les membres d'une déclaration de classe  *)
-let memberConverter s = function
+let memberConverter s0 = function
   | Ast.MemberDeclVars dv ->
     let la = (List.map (varTyper dv.Ast.declVarsTyp.Ast.typCont) 
 		dv.Ast.varList) in
@@ -174,24 +174,45 @@ let memberConverter s = function
       then raise (Error ("les champs ne peuvent pas être des références", 
 		  dv.Ast.declVarsLoc));
       let v = var.varIdent in
-      let l = Hashtbl.find_all classFields s in
+      let l = Hashtbl.find_all classFields s0 in
       if List.mem_assoc v l 
       then raise (Error ("already defined", dv.Ast.declVarsLoc))
-      else Hashtbl.add classFields s (v, var.varTyp)
+      else Hashtbl.add classFields s0 (v, var.varTyp)
     in
     List.iter aux la;
     MemberDeclVars la
   | Ast.VirtualProto (b,p) ->     
     let _, argList, _ = argumentTyper Smap.empty p.Ast.argumentList in
-    let l = Hashtbl.find_all classCons s in
     let lt = List.map (fun a -> a.varTyp) argList in
-    let profEq p1 p2 = 
-      (List.length p1 == List.length p2) && List.for_all2 typEq p1 p2 in
-    if List.exists (profEq lt) l
-    then raise (Error ("ce profil a déjà été déclaré", p.Ast.protoLoc))
-    else
-      VirtualProto (b, {protoVar = protoVarTTyper p.Ast.protoVar ;
-			argumentList = argList;protoKind = Class })
+    begin match p.Ast.protoVar with
+    | Ast.Qvar (t, q) -> 
+      let s = match classOfMethod q with
+	| Some s, None -> s	  
+	| Some s1, Some s2 -> if s1 == s0 then s2 else assert false 
+	| _ -> assert false
+      in
+      let l = Hashtbl.find_all methodsTable (s0,s) in
+      if List.exists (eqProf lt) (snd (List.split l))
+      then raise (Error ("ce profil a déjà été déclaré", p.Ast.protoLoc));
+      let t' = typConverter t.Ast.typCont 
+      and q' = qvarTyper q.Ast.qvarCont in
+      Hashtbl.add methodsTable (s0,s) ((b,t'), lt);
+      VirtualProto (b, {protoVar = Qvar (t',q'); argumentList = argList;
+			protoKind = Method s0})
+
+    | Ast.Tident s -> assert false
+    | Ast.TidentTident (s1, s2) -> assert false
+    end
+
+
+
+
+(* let l = Hashtbl.find_all classCons s in *)
+(*     if List.exists (profEq lt) l *)
+(*     then raise (Error ("ce profil a déjà été déclaré", p.Ast.protoLoc)) *)
+(*     else *)
+(*       VirtualProto (b, {protoVar = protoVarTTyper p.Ast.protoVar ; *)
+(* 			argumentList = argList;protoKind = Class }) *)
 
 
 (* =========================TYPAGE DES EXPRESSIONS=========================== *)
@@ -222,22 +243,37 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
       raise (Error ("Type numérique attendu.", e2.Ast.exprLoc))
     else
       { exprTyp = el.exprTyp; exprCont= ExprEqual (el, er) }
-  | Ast.ExprApply (e, el) -> 
-    let ne = exprLVTyper lenv e and nel = List.map (exprTyper lenv) el in
-    begin
-      match ne.exprCont with
-      | ExprQident (Ident s) -> (* Fonction *)
+  | Ast.ExprApply (e, el) -> assert false
+    (* begin *)
+    (* match e.Ast.exprCont with *)
+    (* | Ast.ExprQident (Ast.Ident s) -> assert false *)
+    (* | Ast.ExprQident (Ast.IdentIdent (s1,s2)) -> assert false *)
+    (* | Ast.ExprDot (e', s) -> assert false *)
+    (*   Format.eprintf "coucou"; *)
+    (*   let ne' = exprTyper lenv e' in *)
+    (*   let c = match ne'.exprTyp with  *)
+    (* 	| TypIdent s -> s  *)
+    (* 	| _ -> raise (Error ("pas type classe", exp.Ast.exprLoc)) *)
+    (*   in *)
+    (*   ne' *)
+      
+    (* end *)
+    
+    (* let ne = exprLVTyper lenv e and nel = List.map (exprTyper lenv) el in *)
+    (* begin *)
+    (*   match ne.exprCont with *)
+    (*   | ExprQident (Ident s) -> assert false *)
+      (* Fonction *)
 	(* when (Hashtbl.mem functionsTable s) *)
-	let lprof = snd (List.split (Hashtbl.find_all functionsTable s)) in
-	let p = List.map (fun e -> e.exprTyp) nel in
-	begin
-	  match minProf (geqListProf p lprof) with
-	  | [] -> raise (Error ("no profile corresponds", e.Ast.exprLoc))
-	  | [p] -> { exprTyp = ne.exprTyp;  exprCont = ExprApply (ne, nel)}
-	  | _ -> raise (Error ("several profiles correspond", e.Ast.exprLoc))
-	end
-      | _ -> assert false
-    end
+	(* let lprof = snd (List.split (Hashtbl.find_all functionsTable s)) in *)
+	(* let p = List.map (fun e -> e.exprTyp) nel in *)
+	(* begin *)
+	(*   match minProf (geqListProf p lprof) with *)
+	(*   | [] -> raise (Error ("no profile corresponds", e.Ast.exprLoc)) *)
+	(*   | [p] -> { exprTyp = ne.exprTyp;  exprCont = ExprApply (ne, nel)} *)
+	(*   | _ -> raise (Error ("several profiles correspond", e.Ast.exprLoc)) *)
+	(* end *)
+      (* | _ -> assert false *)
   | Ast.ExprNew (s, el) -> 
     let nel = List.map (exprTyper lenv) el in
     let lprof = Hashtbl.find_all classCons s in
@@ -349,7 +385,7 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
   | Ast.ExprDot (e, s) ->    
     let ne = exprLVTyper lenv e in
     begin match ne.exprTyp with
-    | TypIdent c ->  {exprTyp = fieldType e.Ast.exprLoc c s; 
+    | TypIdent c -> {exprTyp = fieldType e.Ast.exprLoc c s; 
 		      exprCont = ExprDot (ne, s)}
     | _ -> raise (Error ("n'est pas un constructeur", exp.Ast.exprLoc))
     end
@@ -514,8 +550,8 @@ let declTyper = function
 	else raise (Error ("la valeur de retour doit être numérique", 
 			   p.Ast.protoLoc))
       | Some s1, Some s2 -> (* Méthode *)
-      let nenv = List.fold_right (fun (c,t) -> fun e -> Smap.add c t e) 
-	(Hashtbl.find_all classFields s1) env in
+	let nenv = List.fold_right (fun (c,t) -> fun e -> Smap.add c t e) 
+	  (Hashtbl.find_all classFields s1) env in
 	if typNum t || (typEq t TypVoid) then
 	  ProtoBloc 
 	    ( 
