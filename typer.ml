@@ -225,8 +225,26 @@ let memberConverter s0 = function
       Hashtbl.add methodsTable (s0,s) (((s0,b),t'), lt);
       VirtualProto (b, {protoVar = Function (t',q'); argumentList = argList;})
 
-    | Ast.Tident s -> assert false
-    | Ast.TidentTident (s1, s2) -> assert false
+    | Ast.Tident s -> 
+      if s != s0 then assert false;
+      let _, argList, _ = argumentTyper Smap.empty p.Ast.argumentList in
+      let lt = List.map (fun a -> a.varTyp) argList in
+      let l = Hashtbl.find_all classCons s in
+      if List.exists (eqProf lt) l
+      then raise (Error ("ce profil a déjà été déclaré", p.Ast.protoLoc));      
+      Hashtbl.add classCons s lt;
+      VirtualProto (b, {protoVar = Cons s; argumentList = argList;})
+      
+
+    | Ast.TidentTident (s1, s2) -> 
+      if (s1 != s2) || (s0 != s1) then assert false;
+      let _, argList, _ = argumentTyper Smap.empty p.Ast.argumentList in
+      let lt = List.map (fun a -> a.varTyp) argList in
+      let l = Hashtbl.find_all classCons s1 in
+      if List.exists (eqProf lt) l
+      then raise (Error ("ce profil a déjà été déclaré", p.Ast.protoLoc));      
+      Hashtbl.add classCons s1 lt;
+      VirtualProto (b, {protoVar = Cons s1; argumentList = argList;})
     end
 
 
