@@ -48,7 +48,8 @@ let pushn = sub sp sp oi
 
 (* () -> mips *)
 let save_fp_ra = comment " Sauvegarde de fp:" ++ push fp
-	    ++ comment " Sauvegarde de ra:" ++ push ra
+  ++ comment " Sauvegarde de ra:" ++ push ra
+let restore_ra_fp = lw ra areg (-8, fp) ++ lw fp areg (-4, fp)
 
 (* alloue de la mémoire pour les arguments d'un appel de fonction *)
 let rec allocate_args shift = function
@@ -68,6 +69,11 @@ let allocate_var v lenv =
   in
   Smap.add v.varIdent (offset - sizeof v.varTyp) lenv
   
+let funQvar_to_ident = function
+  | QvarQident qident -> ( match qident with
+    | Ident s -> s
+    | _ -> assert false)
+  | _ -> assert false
 
 (******************** Compilation ********************)
 let compile_LVexpr lenv = function
@@ -147,7 +153,7 @@ let rec compile_expr ex lenv = match ex.exprCont with
       match o with
       | OpEqual -> comp_op seq
       | OpDiff -> comp_op sne
-      | OpLesser -> comp_op slt
+      | OpLesser ->  comp_op slt
       | OpLesserEqual -> comp_op sle
       | OpGreater -> comp_op sgt
       | OpGreaterEqual -> comp_op sge
@@ -155,7 +161,6 @@ let rec compile_expr ex lenv = match ex.exprCont with
       | OpMinus -> arith_op sub
       | OpTimes -> arith_op mul
       | OpDivide -> arith_op div 
-    (* TODO : traiter le cas où e2 est nul -> pas sûr que ce soit nécessaire *)
       | OpModulo -> arith_op rem (*TODO : ^*)
       | OpAnd -> (* Paresseux *)
 	let label1, label2 = new_label (), new_label () in
@@ -257,42 +262,51 @@ let compile_decl codefun codemain = function
     nop, nop
   | DeclClass _ -> assert false
   | ProtoBloc (p, b) -> 
-    begin
-      match p.protoVar with
-      | Qvar (typ, QvarQident Ident "main") -> 
-	if typ != TypInt then raise (Error "main doit avoir le type int")
-	else
-	  let aux (code, lenv) ins = 
-	    let inscode, nlenv = compile_ins lenv 8 ins in
-	    code ++ inscode, nlenv
-	  in
-	  let lenv = allocate_args 0 p.argumentList in
-	  let codemain, _ = 
-	    List.fold_left aux (codemain ++ save_fp_ra, lenv) b in
-	  codefun, codemain
-      | Qvar (typ, q) -> 
-	(* On ajoute la fonction à la table des fonctions *)
-	let funlabel = new_label () in
-	let ident = get_ident q in
-	Hashtbl.add functionsTable ident (funlabel, sizeof typ);
+    (
+      let var, argList = p.protoVar, p.argumentList in
+      match var with
+      | Function (typ, qvar) ->
+	let ident = funQvar_to_ident qvar in
+	(
+	  match ident with
+	  | "main" ->
+	    if typ != TypInt then raise (Error "main doit avoir le type int")
+	    else
+	      let aux (code, lenv) ins = 
+		let inscode, nlenv = compile_ins lenv 8 ins in
+		code ++ inscode, nlenv
+	      in
+	      let lenv = allocate_args 0 p.argumentList in
+	      let codemain', _ = 
+		List.fold_left aux (codemain ++ save_fp_ra, lenv) b in
+	      codefun, la ra alab "main" ++ codemain'
+	  | s -> 
+	    (* On ajoute la fonction à la table des fonctions *)
+	    let funlabel = new_label () in
+	    Hashtbl.add functionsTable s (funlabel, sizeof typ);
 	
-	(* On sauvegarde fp et ra *)
-	let initcode = codefun ++ label funlabel ++ save_fp_ra in
-	
-	(* On compile le bloc *)
-	let aux (code, lenv) ins = 
-	  let inscode, nlenv = compile_ins lenv 8 ins in
-	  code ++ inscode, nlenv
-	in
-	let lenv = allocate_args 0 p.argumentList in
-	let codefun, _ = 
-	  List.fold_left aux (initcode, lenv) b in
-	(* On renvoie le codefun amelioré *)
-	codemain, codefun
-	  
-      | Tident _ -> assert false
-      | TidentTident _ -> assert false
-    end
+	    (* On compile le bloc *)
+	    let aux (code, lenv) ins = 
+	      let inscode, nlenv = compile_ins lenv 8 ins in
+	      code ++ inscode, nlenv
+	    in
+	    let lenv = allocate_args 0 p.argumentList in
+	    let ins_code, _ = List.fold_left aux (nop, lenv) b in
+	    let codefun = 
+	          codefun
+	      ++  comment (" fonction "^s)
+	      ++  label funlabel
+	      ++  ins_code
+	      ++  comment "Restauration de ra et fp"
+	      ++  restore_ra_fp
+	      ++  jr ra
+	    in
+	    (* On renvoie le codefun amelioré *)
+	    codefun, codemain
+	)
+      | Method (cla, ident)  -> assert false
+      | Cons cl-> assert false
+    )
 
 let compile p ofile =
   let aux (codefun, codemain) = compile_decl codefun codemain in 
@@ -302,6 +316,7 @@ let compile p ofile =
 	label "main"
     ++  move fp sp
     ++  code
+    ++  comment "sortie du programme"
     ++  li v0 10
     ++  syscall
     ++  label "print_int"

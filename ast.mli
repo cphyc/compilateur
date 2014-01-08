@@ -26,9 +26,9 @@ and proto = {protoVar: protoVarT; argumentList: argument list;
              protoLoc: loc}
 
 and protoVarT =
-| Qvar of typ * qvar
-| Tident of string
-| TidentTident of string * string
+| Qvar of typ * qvar (* Fonction *)
+| Tident of string (* Constructeur *)
+| TidentTident of string * string (* Méthode *)
 
 and typ = {typCont: typContT; typLoc: loc}
 

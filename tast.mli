@@ -22,15 +22,12 @@ and member =
 | MemberDeclVars of declVars
 | VirtualProto of bool * proto
 
-and proto = {protoVar: protoVarT; argumentList: argument list; 
-	     protoKind: protoKindT}
-(* On décore l'arbre avec le type du prototype (méthode, fonction, constructeur) *)
-and protoKindT = Function | Method of string | Cons of string | Class
+and proto = {protoVar: protoVarT ; argumentList: argument list }
 
 and protoVarT =
-| Qvar of typ * qvar
-| Tident of string
-| TidentTident of string * string
+| Function of typ * qvar (* Fonction *)
+| Cons of string (* Constructeur *)
+| Method of string * string (* Méthode *)
 
 and typ =
 | TypNull

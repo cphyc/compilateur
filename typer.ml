@@ -126,11 +126,12 @@ let rec prevent_redeclaration env var = match var.Ast.varCont with
     else ()
   | Ast.VarPointer v | Ast.VarReference v -> prevent_redeclaration env v
   
-let protoVarTTyper = function
-  | Ast.Qvar (typ, qvar) -> 
-    Qvar (typConverter typ.Ast.typCont, qvarTyper qvar.Ast.qvarCont)
-  | Ast.Tident s -> Tident s
-  | Ast.TidentTident (s1, s2) -> TidentTident (s1, s2)
+let protoVarTTyper = function 
+  | Ast.Qvar (typ, qvar) -> (* Fonction *)
+    Function (typConverter typ.Ast.typCont, qvarTyper qvar.Ast.qvarCont)
+  | Ast.Tident s -> Cons s (* Constructeur *)
+  | Ast.TidentTident (s,s') when s == s' -> Cons s (* Constructeur *)
+  | Ast.TidentTident (s1, s2) -> Method (s1, s2) (* Méthode *)
 
 let rec varTyper typ v0 = match v0.Ast.varCont with
   | Ast.VarIdent s -> { varIdent=s; varRef=false; varTyp=typConverter  typ}
@@ -197,8 +198,7 @@ let memberConverter s0 = function
       let t' = typConverter t.Ast.typCont 
       and q' = qvarTyper q.Ast.qvarCont in
       Hashtbl.add methodsTable (s0,s) ((b,t'), lt);
-      VirtualProto (b, {protoVar = Qvar (t',q'); argumentList = argList;
-			protoKind = Method s0})
+      VirtualProto (b, {protoVar = Function (t',q'); argumentList = argList;})
 
     | Ast.Tident s -> assert false
     | Ast.TidentTident (s1, s2) -> assert false
@@ -506,8 +506,10 @@ let declTyper = function
       c.Ast.memberList in
     if (List.for_all 
 	  (function 
-	  |VirtualProto (b,p) -> 
-	    (match p.protoKind with |Cons _ -> false |_ -> true)
+	  |VirtualProto (b, p) -> 
+	    (match p.protoVar with 
+	    | Cons _ -> false 
+	    | _ -> true)
 	  |_ -> true)
 	  memberList)
     then Hashtbl.add classCons c.Ast.className [];
@@ -524,13 +526,13 @@ let declTyper = function
     let env, argList, typList = argumentTyper Smap.empty p.Ast.argumentList in
 
     (* On ajoute la valeur de retour dans l'environnement local ce qui permet
-       d'avoir son type, mais on renvoie via $v0 *)
-
+       d'avoir son type *)
+    
+    let var = protoVarTTyper p.Ast.protoVar in
     match p.Ast.protoVar with
     | Ast.Qvar (t,q) -> begin
+      (* On distingue les methodes, les classes et les fonctions *)
       let t = typConverter t.Ast.typCont in
-      let var = protoVarTTyper p.Ast.protoVar in
-      (* On distingue les methodes des classes de fonctions *)
       match classOfMethod q with
       | Some s, None -> (* Fonctions *)
 	if Hashtbl.mem functionsTable s 
@@ -539,25 +541,24 @@ let declTyper = function
 	then raise (Error ("Nom déjà utilisé",p.Ast.protoLoc)); 
 	(* On ajoute la fonction à la liste des fonctions *)
 	Hashtbl.add functionsTable s (t, typList);
+	
 	if typNum t || (typEq t TypVoid) then
 	  ProtoBloc	
 	    ( 
 	      { protoVar = var;
-		argumentList = argList ; 
-		protoKind = Function },
-	      insListTyper (Smap.add "return" t env) b.Ast.blocCont;
+		argumentList = argList },
+		insListTyper (Smap.add "return" t env) b.Ast.blocCont;
 	    )
 	else raise (Error ("la valeur de retour doit être numérique", 
 			   p.Ast.protoLoc))
-      | Some s1, Some s2 -> (* Méthode *)
+      | Some s1, Some s2 -> (* Méthode s2 de s1 *)
 	let nenv = List.fold_right (fun (c,t) -> fun e -> Smap.add c t e) 
 	  (Hashtbl.find_all classFields s1) env in
 	if typNum t || (typEq t TypVoid) then
 	  ProtoBloc 
 	    ( 
 	      { protoVar = var;
-		argumentList = argList ;
-		protoKind = Method s1 },
+		argumentList = argList},	   
 	      insListTyper (Smap.add "this" (TypIdent s1) 
 			      (Smap.add "return" t nenv)) b.Ast.blocCont;
 	    )
@@ -570,9 +571,8 @@ let declTyper = function
       (Hashtbl.find_all classFields s) env in
       ProtoBloc 
 	( 
-	  { protoVar = protoVarTTyper p.Ast.protoVar ;
-	    argumentList = argList;
-	    protoKind = Cons s },
+	  { protoVar = var ;
+	    argumentList = argList},
 	  insListTyper (Smap.add "this" (TypIdent s) nenv) b.Ast.blocCont;
 	)
     | Ast.TidentTident (s1, s2) -> (* Constructeur *)
@@ -581,9 +581,8 @@ let declTyper = function
       if s1==s2 then
       ProtoBloc 
 	( 
-	  { protoVar = protoVarTTyper p.Ast.protoVar ;
-	    argumentList = argList;
-	    protoKind = Cons s2 },
+	  { protoVar = var ;
+	    argumentList = argList },
 	  insListTyper (Smap.add "this" (TypIdent s2) nenv) b.Ast.blocCont;
 	)
       else raise (Error (s2^" n'est pas un constructeur", p.Ast.protoLoc))
