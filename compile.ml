@@ -35,14 +35,9 @@ let rec sizeof = function
 | TypIdent s -> assert false
 | TypPointer t -> sizeof t
 
-(* Parcourt l'arbre de syntaxe jusqu'à trouver l'identificateur d'une qvar *)
-let rec get_ident = function
-  | QvarQident q -> begin
-    match q with
+let  get_ident q = match q.qvarIdent with
     | Ident s -> s
     | IdentIdent (_,s) -> s (*On ne renvoie pas le nom de la classe, déjà présent *)
-  end
-  | QvarPointer qvar | QvarReference qvar -> get_ident qvar
 
 (* "pushn size" empile "size" octets sur la pile *)
 let pushn = sub sp sp oi
@@ -70,11 +65,9 @@ let allocate_var v lenv =
   in
   Smap.add v.varIdent (offset - sizeof v.varTyp) lenv
   
-let funQvar_to_ident = function
-  | QvarQident qident -> ( match qident with
+let funQvar_to_ident q = match q.qvarIdent with
     | Ident s -> s
-    | _ -> assert false)
-  | _ -> assert false
+    | _ -> assert false
 
 (******************** Compilation ********************)
 let compile_LVexpr lenv = function
@@ -291,7 +284,8 @@ let compile_decl codefun codemain = function
     (
       let var, argList = p.protoVar, p.argumentList in
       match var with
-      | Function (typ, qvar) ->
+      | Function qvar ->
+	let typ = qvar.qvarTyp in
 	let ident = funQvar_to_ident qvar in
 	(
 	  match ident with

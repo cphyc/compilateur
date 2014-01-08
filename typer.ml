@@ -126,21 +126,25 @@ let rec typBF = function
   | TypPointer p -> typBF p
   | _ -> false
 
-(* Distingue méthode et fonction et renvoie la classe en option *)
-let rec classOfMethod q0 = match q0.Ast.qvarCont with
-  | Ast.QvarQident (Ast.Ident s) -> Some s, None
-  | Ast.QvarQident (Ast.IdentIdent (s1, s2)) -> Some s1, Some s2
-  | Ast.QvarPointer q -> classOfMethod q
-  | Ast.QvarReference q -> classOfMethod q
-    
 let rec qidentTyper = function
   | Ast.Ident s -> Ident s
   | Ast.IdentIdent (s1, s2) -> IdentIdent (s1, s2)
 
-let rec qvarTyper = function
-  | Ast.QvarQident qident -> QvarQident (qidentTyper qident)
-  | Ast.QvarPointer qvar -> QvarPointer (qvarTyper qvar.Ast.qvarCont)
-  | Ast.QvarReference qvar -> QvarReference (qvarTyper qvar.Ast.qvarCont)
+let rec qvarTyper typ v0 = match v0.Ast.qvarCont with
+  | Ast.QvarQident qident -> 
+    {qvarIdent = qidentTyper qident; qvarRef = false; 
+     qvarTyp = typConverter typ}
+  | Ast.QvarPointer qvar -> 
+    let nv = qvarTyper typ qvar in
+    {qvarIdent = nv.qvarIdent; qvarRef = false;
+     qvarTyp = TypPointer nv.qvarTyp}
+  | Ast.QvarReference qvar -> 
+    let nv = qvarTyper typ qvar in
+    if nv.qvarRef then
+      raise (Error("Double reference", v0.Ast.qvarLoc))
+    else
+      {qvarIdent = nv.qvarIdent; qvarRef = true;
+       qvarTyp = nv.qvarTyp}
 
 let rec prevent_redeclaration env var = match var.Ast.varCont with
   | Ast.VarIdent s -> 
@@ -152,13 +156,13 @@ let rec prevent_redeclaration env var = match var.Ast.varCont with
   
 let protoVarTTyper = function 
   | Ast.Qvar (typ, qvar) -> (* Fonction *)
-    Function (typConverter typ.Ast.typCont, qvarTyper qvar.Ast.qvarCont)
+    Function (qvarTyper typ.Ast.typCont qvar)
   | Ast.Tident s -> Cons s (* Constructeur *)
   | Ast.TidentTident (s,s') when s == s' -> Cons s (* Constructeur *)
   | Ast.TidentTident (s1, s2) -> Method (s1, s2) (* Méthode *)
 
 let rec varTyper typ v0 = match v0.Ast.varCont with
-  | Ast.VarIdent s -> { varIdent=s; varRef=false; varTyp=typConverter  typ}
+  | Ast.VarIdent s -> { varIdent=s; varRef=false; varTyp=typConverter typ}
   | Ast.VarPointer v -> 
     let nv = varTyper typ v in
     { varIdent=nv.varIdent; varRef=false; 
@@ -211,18 +215,16 @@ let memberConverter s0 = function
     let lt = List.map (fun a -> a.varTyp) argList in
     begin match p.Ast.protoVar with
     | Ast.Qvar (t, q) -> 
-      let s = match classOfMethod q with
-	| Some s, None -> s	  
-	| Some s1, Some s2 -> if s1 == s0 then s2 else assert false 
-	| _ -> assert false
+      let q' = qvarTyper t.Ast.typCont q in
+      let s = match q'.qvarIdent with
+	| Ident s -> s	  
+	| IdentIdent (s1, s2) -> if s1 == s0 then s2 else assert false 
       in
       let l = Hashtbl.find_all methodsTable (s0,s) in
       if List.exists (eqProf lt) (snd (List.split l))
       then raise (Error ("ce profil a déjà été déclaré", p.Ast.protoLoc));
-      let t' = typConverter t.Ast.typCont 
-      and q' = qvarTyper q.Ast.qvarCont in
-      Hashtbl.add methodsTable (s0,s) (((s0,b),t'), lt);
-      VirtualProto (b, {protoVar = Function (t',q'); argumentList = argList;})
+      Hashtbl.add methodsTable (s0,s) (((s0,b), q'.qvarTyp), lt);
+      VirtualProto (b, {protoVar = Function q'; argumentList = argList;})
 
     | Ast.Tident s -> 
       if s != s0 then assert false;
@@ -628,37 +630,37 @@ let declTyper = function
     match p.Ast.protoVar with
     | Ast.Qvar (t,q) -> begin
       (* On distingue les methodes, les classes et les fonctions *)
-      let t = typConverter t.Ast.typCont in
-      match classOfMethod q with
-      | Some s, None -> (* Fonctions *)
+      let q' = qvarTyper t.Ast.typCont q in
+      let t' = q'.qvarTyp in
+      match q'.qvarIdent with
+      | Ident s -> (* Fonctions *)
 	if Hashtbl.mem functionsTable s 
 	then raise (Error ("Fonction déjà définie",p.Ast.protoLoc));
 	if Hashtbl.mem  genv s
 	then raise (Error ("Nom déjà utilisé",p.Ast.protoLoc)); 
 	(* On ajoute la fonction à la liste des fonctions *)
-	Hashtbl.add functionsTable s (t, typList);
+	Hashtbl.add functionsTable s (t', typList);
 	
-	if typNum t || (typEq t TypVoid) then
+	if typNum t' || (typEq t' TypVoid) then
 	  ProtoBloc	
 	    ( 
 	      { protoVar = var;
 		argumentList = argList },
-		insListTyper (Smap.add "return" t env) b.Ast.blocCont;
+		insListTyper (Smap.add "return" t' env) b.Ast.blocCont;
 	    )
 	else raise (Error ("la valeur de retour doit être numérique", 
 			   p.Ast.protoLoc))
-      | Some s1, Some s2 -> (* Méthode s2 de s1 *)
-	if typNum t || (typEq t TypVoid) then
+      | IdentIdent (s1, s2) -> (* Méthode s2 de s1 *)
+	if typNum t' || (typEq t' TypVoid) then
 	  ProtoBloc 
 	    ( 
 	      { protoVar = var;
 		argumentList = argList},	   
 	      insListTyper (Smap.add "this" (TypPointer (TypIdent s1))
-			      (Smap.add "return" t env)) b.Ast.blocCont;
+			      (Smap.add "return" t' env)) b.Ast.blocCont;
 	    )
 	else raise (Error ("la valeur de retour doit être numérique",
 			   p.Ast.protoLoc))
-      | None, _ -> assert false
     end
     | Ast.Tident s -> (* Constructeur de s *)
       ProtoBloc 

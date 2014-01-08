@@ -25,7 +25,7 @@ and member =
 and proto = {protoVar: protoVarT ; argumentList: argument list }
 
 and protoVarT =
-| Function of typ * qvar (* Fonction *)
+| Function of qvar (* Fonction *)
 | Cons of string (* Constructeur *)
 | Method of string * string (* Méthode *)
 
@@ -40,10 +40,7 @@ and argument = var
 
 and var = {varIdent: string; varRef: bool; varTyp: typ}
 
-and qvar =
-| QvarQident of qident
-| QvarPointer of qvar
-| QvarReference of qvar
+and qvar = {qvarIdent: qident; qvarRef: bool; qvarTyp: typ}
 
 and qident =
 | Ident of string
