@@ -62,9 +62,10 @@ class classObject classTable = object (self)
   val mutable methods : methodObject list Smap.t = Smap.empty
   val mutable cons : consObject list = []
   method print_methods = 
-    Smap.iter (fun str objList -> List.iter (fun obj -> obj#print_profile) objList) methods
+    Smap.iter (fun str objList -> print_string (str^" associé à :"); printf "@.";
+      List.iter (fun obj -> printf "et@.";obj#print_profile) objList) methods
   method init = initCode
-  method offs_var_map = Smap.map (fun (pos, _) -> pos) map 
+  method offs_var_map = Smap.map (fun (a,_) -> a) map
   method size = size
   method decl = declClass
   method offset s = fst (Smap.find s map)
@@ -78,6 +79,7 @@ class classObject classTable = object (self)
     methods <- Smap.add str list methods
   method add_method_label str profile label_creator =
     (* On récupère la méthode associée *)
+    printf "Recherche du profil :\t";print_string (str);print_profile profile;printf "@.";
     let met = match self#get_method str profile with None -> assert false | Some m -> m in
     (* On lui demande créer un nouveau label *)
     met#set_lab label_creator;
@@ -86,7 +88,10 @@ class classObject classTable = object (self)
     (* On récupère la liste des méthodes dont le nom est str *)
     try let metList = Smap.find str methods in
 	(* Dans cette liste, y a t-il une methode qui a le bon profil ?*)
-	Some (List.find (fun met -> eq_profile met#get_profile profile) metList)
+	Some (List.find (fun met ->
+	  printf "element : @.";met#print_profile; 
+	  if eq_profile met#get_profile profile then (printf "Match !@."; true)
+	  else (printf "Fail@."; false)) metList)
     with Not_found -> 
       (* On explore tous les supers jusqu'à trouver la bonne *)
       try let dadysClass = 
@@ -120,7 +125,7 @@ class classObject classTable = object (self)
       | [] -> env
       | member::mlist -> ( match member with
 	| MemberDeclVars dv -> 
-	  (* On ajoute tous les copains à l'environnement *)
+	  (* On ajoute tous les copaines à l'environnement *)
 	  List.fold_left (fun env var ->
 	    Smap.add var.varIdent (sizeof var.varTyp) env)
 	    (memberListRunner env mlist) dv
@@ -164,7 +169,8 @@ class classObject classTable = object (self)
     (* On transforme l'environnement donnant les tailles en un environnement donnant
        la position par rapport au début ET les tailles*)
     let first_free, offsEnv = Smap.fold (fun ident size (first_free, offsMap) -> 
-      (first_free + size), Smap.add ident (first_free, size) offsMap) memberListEnv (0, Smap.empty)
+      (first_free + size),
+      Smap.add ident (first_free, size) offsMap) memberListEnv (0, Smap.empty)
     in
     (* On sauvegarde le tout en appelant éventuellement le constructeur (TODO)*)
     initCode <- Smap.fold (fun ident size code -> 
@@ -174,6 +180,7 @@ class classObject classTable = object (self)
     map <- offsEnv;
     declClass <- c;
     size <- first_free;
+    self#print_methods;
 end
 (* Une classe : une déclaration, une map des tailles*positions, un code 
    d'initialisation, une taille *)
@@ -211,18 +218,7 @@ let save_fp_ra =
   ++   push fp
   ++   comment " sauvegarde de ra"
   ++   push ra
-let restore_ra_fp = 
-     lw ra areg (-8, fp) 
-  ++ lw fp areg (-4, fp)
-let exec lab =
-      comment " sauvegarde de ra et fp"
-  ++  save_fp_ra
-  ++  comment " on place le haut de la pile au dessus de ra et sur fp"
-  ++  comment " on a alors sp sur la première case vide"
-  ++  add fp sp oi 8
-  ++  jal lab
-  ++  comment " restauration de ra et fp"
-  ++  restore_ra_fp
+let restore_ra_fp = lw ra areg (-8, fp) ++ lw fp areg (-4, fp)
 
 let print_int = 
       comment " print_int" 
@@ -239,21 +235,41 @@ let print_label label =
 (* alloue de la mémoire pour les arguments d'un appel de fonction *)
 let rec allocate_args shift = function
   | [] -> Smap.empty
-  | v::vlist -> let size = sizeof v.varTyp in let  new_shift = shift + sizeof v.varTyp in
-		(Smap.add v.varIdent (shift, size) (allocate_args new_shift vlist))
+  | v::vlist -> let new_shift = shift + sizeof v.varTyp in
+		(Smap.add v.varIdent shift (allocate_args new_shift vlist))
 
 (* alloue de la mémoire pour une variable en cherchant le plus petit offset (% à fp)
    et empile en dessous. Si l'env est vide, renvoie - 8 (car on a sauvé fp et sp).*)
 let allocate_var v lenv = 
-  let _, (offset, _) = 
+  let _, offset = 
     try 
       (* On prend le plus grand offset en val abs parmi les offs négatifs *)
       Smap.max_binding 
-	(Smap.filter (fun _ (off, _) -> if off>=0 then false else true) lenv)
-    with Not_found -> "", (-8, 0)
+	(Smap.filter (fun _ off -> if off>=0 then false else true) lenv)
+    with Not_found -> "", -8
   in
-  let size = sizeof v.varTyp in
-  Smap.add v.varIdent (offset - size, size) lenv
+  Smap.add v.varIdent (offset - sizeof v.varTyp) lenv
+
+type member = MemVar of string * typ | MemFun
+(* transforme tous les membres en une belle liste, puis les place dans un Smap *)
+let rec memberSize_list ml =
+  let rec aux = function
+    | MemberDeclVars [] -> []
+    | MemberDeclVars (v::vlist) -> 
+      MemVar (v.varIdent, v.varTyp) :: (aux (MemberDeclVars vlist))
+    | VirtualProto _ -> assert false
+  in
+  let rec memList = function
+    | [] -> []
+    | member :: mlist -> List.append (aux member) (memList mlist)
+  in
+  List.fold_left 
+    (fun map member ->
+      let ident, size = (match member with
+	| MemVar (id,t) -> id, sizeof t
+	| MemFun -> assert false)
+      in
+      Smap.add ident size map) Smap.empty (memList ml)
     
 let funQvar_to_ident q = match q.qvarIdent with
     | Ident s -> Some s, None
@@ -266,18 +282,18 @@ let rec compile_LVexpr lenv cenv = function
       begin
 	if Smap.mem s lenv then (* Variable locale *)
 	  let pos = Smap.find s lenv in 
-	       comment (" pointeur variable locale "^s) 
+	       comment (" variable locale "^s) 
 	    ++ li a0 pos 
 	    ++ add a0 a0 oreg fp 
 	    ++ push a0
 	else if Smap.mem s cenv then (* Variable de classe *)
 	  let offset = Smap.find s cenv in 
 	  let this = Smap.find "this" lenv in
-	      comment (" pointeur variable de classe "^s)
+	      comment (" variable de classe "^s)
 	  ++  comment "  récupération de this"
 	  ++  li a0 this
 	  ++  add a0 a0 oreg fp
-	  ++  comment ("  récupération de la variable "^s^" par rapport à this")
+	  ++  comment ("  récupération de la variable "^s)
 	  ++  li a1 offset
 	  ++  add a0 a0 oreg a1
 	  ++  push a0
@@ -294,9 +310,8 @@ let rec compile_LVexpr lenv cenv = function
     (match e.exprTyp with 
     | TypIdent c -> (* On un directement une classe *)
       let offset = (Hashtbl.find classTable c)#offset s in
-          comment (" pointeur sur variable de classe "^s)
+          comment (" Variable de class "^s)
       ++  compile_LVexpr lenv cenv e.exprCont
-      ++  comment (" pointeur vers "^s^" récupéré, chargement de la valeur")
       ++  pop a0              (* on a l'adresse % fp, et l'offset *)
       ++  add a0 a0 oi offset (* on a dans a0 l'adresse de la variable *)
       ++  push a0             (* on pousse l'adresse variable *)
@@ -345,22 +360,20 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
       ++  lw a0 areg (0, a0)  (* on charge la variable dans a0 *)
       ++  push a0
     | _ -> assert false
-    )
+  )
   | ExprEqual (e1,e2) -> (* On compile l'expression e1, c'est une lvalue donc 
 			    le résultat est son adresse *)
-        compile_LVexpr lenv cenv e1.exprCont
-    ++  comment " calcul de la valeur droite" 
-    ++  compile_expr e2 lenv cenv 
-    ++  comment " valeur droite"
-    ++  pop a1 
-    ++  comment " valeur gauche (addresse)"
-    ++  pop a0 
+    compile_LVexpr lenv cenv e1.exprCont
+    ++ comment " calcul de la valeur droite" ++ compile_expr e2 lenv cenv 
+    ++ pop a1 ++ pop a0 
     ++ comment " sauvegarde de la valeur" ++ sw a1 areg (0, a0)
   | ExprApply (e,p,l) -> ( 		(* cadeau : p profil cherché *)
     match e.exprCont with
     | ExprQident (Ident s) -> (* appel de fonction *)
       (* On recherche le profil correspondant *)
-      let size, funlab, typList = Hashtbl.find functionsTable s in
+      let size, funlab, typList = 
+	List.find (fun (s, l, tl) -> tl == p)
+	  (Hashtbl.find_all functionsTable s) in
       let codeArgs = 
 	(* On fold à droite pour avoir dans le bon sens *)
 	List.fold_right (fun expr code -> code ++ compile_expr expr lenv cenv) l nop
@@ -368,13 +381,7 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
           comment (" appel de la fonction "^s)
       ++  comment "  construction de la pile"
       ++  codeArgs
-      ++  comment " sauvegarde de ra et fp"
-      ++  save_fp_ra
-      ++  comment " on place le haut de la pile au dessus de ra et sur fp"
-      ++  add fp sp oi 8
       ++  jal funlab
-      ++  comment " restauration de ra et fp"
-      ++  restore_ra_fp
       ++  comment "  on met le résultat sur la pile"
       ++  push v0
     | ExprQident (IdentIdent (s1,s2)) when s1==s2 -> assert false(* appel de cons *)
@@ -382,7 +389,7 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
     | ExprParenthesis e -> assert false (* compile_expr lenv {ExprApply (e,l)} *)
     | ExprDot (e,s) -> 
       (* On compile l'adresse de e *)
-      let get_e_address = compile_LVexpr lenv cenv e.exprCont in
+      (* let get_e_address = compile_LVexpr lenv cenv e.exprCont ++ pop a0 in *)
       (* On trouve la classe grace au type *)
       let className = match e.exprTyp with | TypIdent s -> s | _ -> assert false in
       (* On a la classe, on cherche alors le code de la méthode *)
@@ -397,10 +404,7 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
       in
           comment (" appel de la méthode "^s^" de "^className)
       ++  comment "  construction de la pile"
-      ++  codeArgs 
-      ++  comment "  récupération de this en tete de pile"
-      ++  get_e_address
-      ++  exec metLab
+      ++  codeArgs
       ++  jal metLab
       ++  comment "  on met le résultat sur la pile"
       ++  push v0
@@ -567,21 +571,20 @@ let compile_decl codefun codemain = function
 	let by_ref = qvar.qvarRef in
 	assert (not by_ref);
 	(
-	  (* ident est soit un string tout seul (une fonction), soit un couple 
-	     de string (methode ou cons) *)
+	  (* ident est soit un string tout seul (une fonction), soit un couple de string (methode ou cons) *)
 	  match ident with
 	    (* Fonction main *)
 	  | Some "main", None ->
-	    (* Sous fonction pour créer l'environnement au fur et à mesure des
-	       instructions *)
-	    let aux (code, lenv) ins = 
-	      let inscode, nlenv = compile_ins lenv Smap.empty 8 ins in
-	      code ++ inscode, nlenv
-	    in
-	    let lenv = allocate_args 0 p.argumentList in
-	    let codemain', _ = 
-	      List.fold_left aux (codemain ++ save_fp_ra, lenv) b in
-	    codefun, la ra alab "main" ++ codemain'
+	    if typ != TypInt then raise (Error "main doit avoir le type int")
+	    else
+	      let aux (code, lenv) ins = 
+		let inscode, nlenv = compile_ins lenv Smap.empty 8 ins in
+		code ++ inscode, nlenv
+	      in
+	      let lenv = allocate_args 0 p.argumentList in
+	      let codemain', _ = 
+		List.fold_left aux (codemain ++ save_fp_ra, lenv) b in
+	      codefun, la ra alab "main" ++ codemain'
 
 	  (* Fonction quelconque *)
 	  | Some s, None -> 
@@ -603,7 +606,12 @@ let compile_decl codefun codemain = function
 	          codefun
 	      ++  comment (" fonction "^s)
 	      ++  label funLabel
+	      ++  move fp sp
+	      ++  save_fp_ra
 	      ++  funCode
+	      ++  comment " restauration de ra et fp"
+	      ++  restore_ra_fp
+	      ++  comment " retour à la case départ"
 	      ++  jr ra
 	    in
 	    (* On renvoie le tout *)
@@ -623,7 +631,7 @@ let compile_decl codefun codemain = function
 	    let classEnv = classObj#offs_var_map in
 	    (* Mise à jour de l'env *)
 	    let tempEnv = allocate_args 4 argList in
-	    let metEnv = Smap.add "this" (0,4) tempEnv in
+	    let metEnv = Smap.add "this" 0 tempEnv in
 	    (* Code de la méthode *)
 	    let aux (code, lenv) ins = 
 	      let inscode, nlenv = compile_ins lenv classEnv 8 ins in
@@ -634,7 +642,11 @@ let compile_decl codefun codemain = function
 	          codefun
 	      ++  comment (" méthode "^met^" de la classe "^cla)
 	      ++  label metLabel
+	      ++  move fp sp
+	      ++  save_fp_ra
 	      ++  metCode
+	      ++  comment " restauration de ra et fp"
+	      ++  restore_ra_fp
 	      ++  comment " retour à la case départ"
 	      ++  jr ra in
 	    codefun, codemain
