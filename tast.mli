@@ -25,9 +25,8 @@ and member =
 and proto = {protoVar: protoVarT ; argumentList: argument list }
 
 and protoVarT =
-| Function of qvar (* Fonction *)
-| Cons of string (* Constructeur *)
-| Method of string * string (* Méthode *)
+| Qvar of qvar (* Fonction ou méthode *)
+| Tident of string (* Cons *)
 
 and typ =
 | TypNull

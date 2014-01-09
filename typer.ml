@@ -155,12 +155,13 @@ let rec prevent_redeclaration env var = match var.Ast.varCont with
     else ()
   | Ast.VarPointer v | Ast.VarReference v -> prevent_redeclaration env v
   
-let protoVarTTyper = function 
+let protoVarTTyper loc = function 
   | Ast.Qvar (typ, qvar) -> (* Fonction *)
-    Function (qvarTyper typ.Ast.typCont qvar)
-  | Ast.Tident s -> Cons s (* Constructeur *)
-  | Ast.TidentTident (s,s') when s == s' -> Cons s (* Constructeur *)
-  | Ast.TidentTident (s1, s2) -> Method (s1, s2) (* Méthode *)
+    Qvar (qvarTyper typ.Ast.typCont qvar)
+  | Ast.Tident s -> Tident s (* Constructeur *)
+  | Ast.TidentTident (s,s') -> 
+    if s == s' then Tident s (* Constructeur *)
+    else raise (Error ("pas un constructeur",loc))
 
 let rec varTyper typ v0 = match v0.Ast.varCont with
   | Ast.VarIdent s -> { varIdent=s; varRef=false; varTyp=typConverter typ}
@@ -230,7 +231,7 @@ let memberConverter s0 = function
       if List.exists (eqProf lt) (snd (List.split l))
       then raise (Error ("ce profil a déjà été déclaré", p.Ast.protoLoc));
       Hashtbl.add methodsTable (s0,s) (((s0,b), (q'.qvarTyp,q'.qvarRef)), lt);
-      VirtualProto (b, {protoVar = Function q'; argumentList = argList;})
+      VirtualProto (b, {protoVar = Qvar q'; argumentList = argList;})
 
     | Ast.Tident s -> 
       if s != s0 then raise (Error ("pas la même classe", p.Ast.protoLoc));
@@ -240,7 +241,7 @@ let memberConverter s0 = function
       if List.exists (eqProf lt) l
       then raise (Error ("ce profil a déjà été déclaré", p.Ast.protoLoc));      
       Hashtbl.add classCons s lt;
-      VirtualProto (b, {protoVar = Cons s; argumentList = argList;})
+      VirtualProto (b, {protoVar = Tident s; argumentList = argList;})
       
 
     | Ast.TidentTident (s1, s2) -> 
@@ -252,7 +253,7 @@ let memberConverter s0 = function
       if List.exists (eqProf lt) l
       then raise (Error ("ce profil a déjà été déclaré", p.Ast.protoLoc));      
       Hashtbl.add classCons s1 lt;
-      VirtualProto (b, {protoVar = Cons s1; argumentList = argList;})
+      VirtualProto (b, {protoVar = Tident s1; argumentList = argList;})
     end
 
 
@@ -763,7 +764,7 @@ let declTyper = function
 	  (function 
 	  |VirtualProto (b, p) -> 
 	    (match p.protoVar with 
-	    | Cons _ -> false 
+	    | Tident _ -> false 
 	    | _ -> true)
 	  |_ -> true)
 	  memberList)
@@ -782,7 +783,7 @@ let declTyper = function
     (* On ajoute la valeur de retour dans l'environnement local ce qui permet
        d'avoir son type *)
     
-    let var = protoVarTTyper p.Ast.protoVar in
+    let var = protoVarTTyper p.Ast.protoLoc p.Ast.protoVar in
     match p.Ast.protoVar with
     | Ast.Qvar (t,q) -> begin
       (* On distingue les methodes, les classes et les fonctions *)
