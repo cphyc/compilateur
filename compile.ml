@@ -243,7 +243,7 @@ let rec compile_expr ex lenv = match ex.exprCont with
     ++ comment " calcul de la valeur droite" ++ compile_expr e2 lenv 
     ++ pop a1 ++ pop a0 
     ++ comment " sauvegarde de la valeur" ++ sw a1 areg (0, a0)
-  | ExprApply (e,l) -> (
+  | ExprApply (e,p,l) -> ( 		(* cadeau : p profil cherché *)
     match e.exprCont with
     | ExprQident (Ident s) -> (* appel de fonction *)
       let size, funlab, sizeList = Hashtbl.find functionsTable s in

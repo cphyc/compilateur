@@ -287,23 +287,19 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
       (* On distingue les fonctions des constructeurs, etc ... *)
       | Ast.ExprQident (Ast.Ident s) when Hashtbl.mem functionsTable s -> 
 	(* function *)
-	let (typ, _), protoTypList =  Hashtbl.find functionsTable s in
-	let argList = List.map (fun expr -> exprTyper lenv expr) el in
+	let profList =  Hashtbl.find_all functionsTable s in
+	let argList = List.map (exprTyper lenv) el in
 	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
-	
-	(* On vérifie que la liste des types des expressions 
-	   est bien inclus dans typlist *)
-	let is_ok = List.for_all2 
-	  (fun argTyp protoTyp -> typIn argTyp protoTyp) 
-	  argTypList protoTypList in
-	if not is_ok then raise ( 
-	  Error 
-	    ("Types des paramètres incompatibles avec le type de la fonction",
-	     exp.Ast.exprLoc));
-	(* Les types sont compatibles, on renvoie le tout *)
-	{exprTyp = typ; exprCont = 
-	    ExprApply ({exprTyp = typ; exprCont = ExprQident (Ident s)}, 
-		       argList)}
+	begin
+	  match minProf2 (geqListProf2 argTypList profList) with
+	  | [] -> raise (Error("Aucun profil ne correspond", exp.Ast.exprLoc))
+	  | [(t,_),p] -> 
+	    {exprTyp = t ; 
+	     exprCont = ExprApply ({exprTyp = t; 
+				    exprCont = ExprQident (Ident s)}, p,
+				   argList)}
+	  | _ -> raise (Error("Trop de profils",exp.Ast.exprLoc))
+	end
 
       | Ast.ExprQident (Ast.Ident s) -> 
 	if not (Smap.mem "this" lenv)
@@ -324,7 +320,7 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	  | [((c,v),(t,_)),p] -> 
 	    {exprTyp = t ; 
 	     exprCont = ExprApply ({exprTyp = t; 
-				    exprCont = ExprQident (Ident s)}, 
+				    exprCont = ExprQident (Ident s)}, p, 
 				   argList)}
 	  | _ -> raise (Error("Trop de profils",exp.Ast.exprLoc))
 	end
@@ -350,7 +346,7 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	  | [((c,v),(t,_)),p] -> 
 	    {exprTyp = t ; 
 	     exprCont = ExprApply ({exprTyp = t; 
-				    exprCont = ExprQident (Ident s)}, 
+				    exprCont = ExprQident (Ident s)}, p,
 				   argList)}
 	  | _ -> raise (Error("Trop de profils",exp.Ast.exprLoc))
 	end
@@ -374,7 +370,7 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	  | [] -> raise (Error("Aucun profil ne correspond",e'.Ast.exprLoc))
 	  | [((c,v),(t,_)),p] -> 
 	    {exprTyp = t ; 
-	     exprCont = ExprApply ({exprTyp = t; exprCont = ExprDot (ne', s)}, 
+	     exprCont = ExprApply ({exprTyp = t; exprCont = ExprDot (ne', s)},p,
 	    argList)}
 	  | _ -> raise (Error("Trop de profils",e'.Ast.exprLoc))
 	end
@@ -483,25 +479,22 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
       match e.Ast.exprCont with
       (* On distingue les fonctions des constructeurs, etc ... *)
       | Ast.ExprQident (Ast.Ident s) when Hashtbl.mem functionsTable s -> 
-	let (typ, r), protoTypList =  Hashtbl.find functionsTable s in
-	if not r then raise (Error ("ce n'est pas une reference", 
-				    exp.Ast.exprLoc));
-	let argList = List.map (fun expr -> exprTyper lenv expr) el in
+	let profList =  Hashtbl.find_all functionsTable s in
+	let argList = List.map (exprTyper lenv) el in
 	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
-	
-	(* On vérifie que la liste des types des expressions 
-	   est bien inclus dans typlist *)
-	let is_ok = List.for_all2 
-	  (fun argTyp protoTyp -> typIn argTyp protoTyp) 
-	  argTypList protoTypList in
-	if not is_ok then raise ( 
-	  Error 
-	    ("Types des paramètres incompatibles avec le type de la fonction",
-	     exp.Ast.exprLoc));
-	(* Les types sont compatibles, on renvoie le tout *)
-	{exprTyp = typ; exprCont = 
-	    ExprApply ({exprTyp = typ; exprCont = ExprQident (Ident s)}, 
-		       argList)}
+	begin
+	  match minProf2 (geqListProf2 argTypList profList) with
+	  | [] -> raise (Error("Aucun profil ne correspond", exp.Ast.exprLoc))
+	  | [(t,r),p] -> 
+	    if not r then 
+	      raise (Error ("ce n'est pas une reference", exp.Ast.exprLoc));
+	    {exprTyp = t ; 
+	     exprCont = ExprApply ({exprTyp = t; 
+				    exprCont = ExprQident (Ident s)}, p,
+				   argList)}
+	  | _ -> raise (Error("Trop de profils",exp.Ast.exprLoc))
+	end
+
 
       | Ast.ExprQident (Ast.Ident s) -> 
 	if not (Smap.mem "this" lenv)
@@ -524,7 +517,7 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
 	      raise (Error ("ce n'est pas une reference", exp.Ast.exprLoc));
 	    {exprTyp = t ; 
 	     exprCont = ExprApply ({exprTyp = t; 
-				    exprCont = ExprQident (Ident s)}, 
+				    exprCont = ExprQident (Ident s)}, p,
 				   argList)}
 	  | _ -> raise (Error("Trop de profils",exp.Ast.exprLoc))
 	end
@@ -552,7 +545,7 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
 				 exp.Ast.exprLoc));
 	    {exprTyp = t ; 
 	     exprCont = ExprApply ({exprTyp = t; 
-				    exprCont = ExprQident (Ident s)}, 
+				    exprCont = ExprQident (Ident s)}, p,
 				   argList)}
 	  | _ -> raise (Error("Trop de profils",exp.Ast.exprLoc))
 	end
@@ -578,7 +571,7 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
 	    if not r then raise (Error("ce n'est pas une reference", 
 				 exp.Ast.exprLoc));
 	    {exprTyp = t ; 
-	     exprCont = ExprApply ({exprTyp = t; exprCont = ExprDot (ne', s)}, 
+	     exprCont = ExprApply ({exprTyp = t; exprCont = ExprDot (ne', s)},p,
 	    argList)}
 	  | _ -> raise (Error("Trop de profils",e'.Ast.exprLoc))
 	end
