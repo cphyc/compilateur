@@ -18,17 +18,23 @@ let functionsTable: (string, int * string * int list) Hashtbl.t = Hashtbl.create
 
 (* "pushn size" empile "size" octets sur la pile *)
 let pushn = sub sp sp oi
-  
-class classObject classTable = object
+
+class classObject classTable = object (self)
   val mutable initCode : text = nop
   val mutable map : (int*int) Smap.t = Smap.empty
+  val mutable parents : classObject list = []
   val mutable declClass = {className = ""; supersOpt = None; memberList = []}
   val mutable size = 0
+  val mutable methods : (label option*bool*typ*typ list*bool) Smap.t = Smap.empty
+  val mutable cons : (label option*typ*typ list) Smap.t = Smap.empty
   method init = initCode
   method mapping = map 
   method size = size
   method decl = declClass
   method offset s = fst (Smap.find s map)
+  method add_method str lab is_ref typ sign virt = 
+    methods <- Smap.add str (lab, is_ref, typ, sign, virt) methods
+  method add_cons str lab typ sign = cons <- Smap.add str (lab, typ, sign) cons
   method build c =
     let rec sizeof = function
       | TypNull -> assert false
@@ -54,7 +60,26 @@ class classObject classTable = object
 	  List.fold_left (fun env var ->
 	    Smap.add var.varIdent (sizeof var.varTyp) env)
 	    (memberListRunner env mlist) dv
-	| VirtualProto _ -> assert false
+	| VirtualProto (virt, proto) -> 
+	  (* On calcule sa signature *)
+	  let signature = 
+	    List.map (fun arg -> arg.varTyp) proto.argumentList in
+	  (* On ajoute soit un constructeur, soit une méthode *)
+	  ( match proto.protoVar with
+	  | Function qvar -> (* Achtung si is_ref est vrai *)
+	    let is_ref = qvar.qvarRef in
+	    let typ = qvar.qvarTyp in
+	    (
+	      match qvar.qvarIdent with
+	      | Ident s -> self#add_method s None is_ref typ signature virt
+	      | IdentIdent (s1, s2) -> assert (s1 == declClass.className);
+		self#add_method s2 None is_ref typ signature virt
+	    )
+	  | Cons s when s == declClass.className -> 
+	      self#add_cons s None TypNull signature
+	  | Cons _ | Method (_,_) -> assert false
+	  );
+	  env
       )
     in 
     let memberListEnv = memberListRunner superEnv c.memberList in
@@ -65,7 +90,7 @@ class classObject classTable = object
       (first_free + size),
       Smap.add ident (first_free, size) offsMap) memberListEnv (0, Smap.empty)
     in
-    (* On sauvegarde le tout *)
+    (* On sauvegarde le tout en appelant éventuellement le constructeur (TODO)*)
     initCode <- Smap.fold (fun ident size code -> 
       code 
       ++  comment ("Membre "^ident)
@@ -77,7 +102,6 @@ end
 (* Une classe : une déclaration, une map des tailles*positions, un code 
    d'initialisation, une taille *)
 let classTable: (string, classObject) Hashtbl.t = Hashtbl.create 17
-
 
 (* Associe à variable de classe sa map *)
 let classVars: (string, (int*int) Smap.t) Hashtbl.t = Hashtbl.create 17
