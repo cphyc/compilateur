@@ -198,6 +198,8 @@ let memberConverter s0 = function
     let la = (List.map (varTyper dv.Ast.declVarsTyp.Ast.typCont) 
 		dv.Ast.varList) in
     let aux var = 
+      if typEq var.varTyp (TypIdent s0)
+      then raise (Error ("Constructeur incomplet", dv.Ast.declVarsLoc));
       if not (typBF var.varTyp) 
       then raise (Error ("mal formé", dv.Ast.declVarsLoc));
       if var.varRef
