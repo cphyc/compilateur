@@ -62,8 +62,8 @@ class classObject classTable = object (self)
   val mutable methods : methodObject list Smap.t = Smap.empty
   val mutable cons : consObject list = []
   method print_methods = 
-    Smap.iter (fun str objList -> print_string (str^" associé à :"); printf "@.";
-      List.iter (fun obj -> printf "et@.";obj#print_profile) objList) methods
+    Smap.iter (fun str objList -> List.iter (fun obj -> obj#print_profile) objList)
+      methods
   method init = initCode
   method offs_var_map = Smap.map (fun (a,_) -> a) map
   method size = size
@@ -79,7 +79,6 @@ class classObject classTable = object (self)
     methods <- Smap.add str list methods
   method add_method_label str profile label_creator =
     (* On récupère la méthode associée *)
-    printf "Recherche du profil :\t";print_string (str);print_profile profile;printf "@.";
     let met = match self#get_method str profile with None -> assert false | Some m -> m in
     (* On lui demande créer un nouveau label *)
     met#set_lab label_creator;
@@ -88,10 +87,7 @@ class classObject classTable = object (self)
     (* On récupère la liste des méthodes dont le nom est str *)
     try let metList = Smap.find str methods in
 	(* Dans cette liste, y a t-il une methode qui a le bon profil ?*)
-	Some (List.find (fun met ->
-	  printf "element : @.";met#print_profile; 
-	  if eq_profile met#get_profile profile then (printf "Match !@."; true)
-	  else (printf "Fail@."; false)) metList)
+	Some (List.find (fun met -> eq_profile met#get_profile profile) metList)
     with Not_found -> 
       (* On explore tous les supers jusqu'à trouver la bonne *)
       try let dadysClass = 
@@ -134,31 +130,17 @@ class classObject classTable = object (self)
 	  let profile = 
 	    List.map (fun arg -> arg.varTyp) proto.argumentList 
 	  in
-	  (* On ajoute soit un constructeur, soit une méthode *)
+	  (* ____ récupérer de chez ken *)
+	  (* Deux cas : soit on a un Ident -> méthode *)
 	  let _ =  match proto.protoVar with
-	  | Function qvar -> (* Achtung si is_ref est vrai *)
-	    let is_ref = qvar.qvarRef in
-	    let typ = qvar.qvarTyp in
-	    (
-	      match qvar.qvarIdent with
-		(* Constructeurs *)
-	      | Ident s when s == declClass.className -> 
-		(* On a un constructeur, on l'ajoute à la liste *)
-		self#add_cons s (new consObject None typ profile);
-	      | IdentIdent (s1, s2) when s2 == declClass.className ->
-		(* On a un constructeur, on l'ajoute à la liste *)
-		assert (s1 == declClass.className);
-		self#add_cons s1 (new consObject None typ profile);
-
-                (* Méthodes *)
-	      | Ident s -> 
-		self#add_method s 
-		  (new methodObject None is_ref typ profile virt)
-	      | IdentIdent (s1, s2) -> assert (s1 == declClass.className);
-		self#add_method s2 
-		  (new methodObject None is_ref typ profile virt)
-	    )
-	  | _ -> assert false
+	  | Qvar qvar -> ( match qvar.qvarIdent with
+	    | Ident s ->
+	      let is_ref = qvar.qvarRef in
+	      let typ = qvar.qvarTyp in
+	      (* On a un constructeur, on l'ajoute à la liste *)
+	      self#add_cons s (new consObject None typ profile);
+	    | _ -> assert false )
+	  | Tident s -> assert false 
 	  in
 	  (* On continue à traiter mlist *)
 	  memberListRunner env mlist
@@ -180,7 +162,6 @@ class classObject classTable = object (self)
     map <- offsEnv;
     declClass <- c;
     size <- first_free;
-    self#print_methods;
 end
 (* Une classe : une déclaration, une map des tailles*positions, un code 
    d'initialisation, une taille *)
@@ -202,17 +183,12 @@ let new_label () = labelint := !labelint + 1;
 
 (* renvoie la taille d'un type *)
 let rec sizeof = function
-| TypNull -> assert false
-| TypVoid -> 4 
+| TypNull -> 4
+| TypVoid -> 0 
 | TypInt -> 4
 | TypIdent s -> (Hashtbl.find classTable s)#size
-| TypPointer t -> sizeof t
-
-let  get_ident q = match q.qvarIdent with
-  | Ident s -> s
-  | IdentIdent (_,s) -> s (*On ne renvoie pas le nom de la classe, déjà présent *)
+| TypPointer t -> 4
  
-(* () -> mips *)
 let save_fp_ra = 
        comment " sauvegarde de fp" 
   ++   push fp
@@ -233,10 +209,17 @@ let print_label label =
 
 (********************* Allocateurs ********************)
 (* alloue de la mémoire pour les arguments d'un appel de fonction *)
-let rec allocate_args shift = function
-  | [] -> Smap.empty
-  | v::vlist -> let new_shift = shift + sizeof v.varTyp in
-		(Smap.add v.varIdent shift (allocate_args new_shift vlist))
+let allocate_args use_this argList =
+  let init = 
+    if use_this then Smap.singleton "this" 0, 4
+    else Smap.empty, 0
+  in
+  let env, _ = List.fold_left 
+    (fun (env, first_free) var -> 
+      let new_first_free = first_free + sizeof var.varTyp in
+      Smap.add var.varIdent first_free env, new_first_free)
+    init argList in
+  env
 
 (* alloue de la mémoire pour une variable en cherchant le plus petit offset (% à fp)
    et empile en dessous. Si l'env est vide, renvoie - 8 (car on a sauvé fp et sp).*)
@@ -249,27 +232,6 @@ let allocate_var v lenv =
     with Not_found -> "", -8
   in
   Smap.add v.varIdent (offset - sizeof v.varTyp) lenv
-
-type member = MemVar of string * typ | MemFun
-(* transforme tous les membres en une belle liste, puis les place dans un Smap *)
-let rec memberSize_list ml =
-  let rec aux = function
-    | MemberDeclVars [] -> []
-    | MemberDeclVars (v::vlist) -> 
-      MemVar (v.varIdent, v.varTyp) :: (aux (MemberDeclVars vlist))
-    | VirtualProto _ -> assert false
-  in
-  let rec memList = function
-    | [] -> []
-    | member :: mlist -> List.append (aux member) (memList mlist)
-  in
-  List.fold_left 
-    (fun map member ->
-      let ident, size = (match member with
-	| MemVar (id,t) -> id, sizeof t
-	| MemFun -> assert false)
-      in
-      Smap.add ident size map) Smap.empty (memList ml)
     
 let funQvar_to_ident q = match q.qvarIdent with
     | Ident s -> Some s, None
@@ -565,7 +527,7 @@ let compile_decl codefun codemain = function
     (
       let var, argList = p.protoVar, p.argumentList in
       match var with
-      | Function qvar ->
+      | Qvar qvar ->
 	let typ = qvar.qvarTyp in
 	let ident = funQvar_to_ident qvar in
 	let by_ref = qvar.qvarRef in
@@ -581,7 +543,7 @@ let compile_decl codefun codemain = function
 		let inscode, nlenv = compile_ins lenv Smap.empty 8 ins in
 		code ++ inscode, nlenv
 	      in
-	      let lenv = allocate_args 0 p.argumentList in
+	      let lenv = allocate_args false p.argumentList in
 	      let codemain', _ = 
 		List.fold_left aux (codemain ++ save_fp_ra, lenv) b in
 	      codefun, la ra alab "main" ++ codemain'
@@ -599,7 +561,7 @@ let compile_decl codefun codemain = function
 	      code ++ inscode, nlenv
 	    in
 	    (* On créée l'environnement local lié aux arguments *)
-	    let funEnv = allocate_args 0 argList in
+	    let funEnv = allocate_args false argList in
 	    (* On produit le code de la fonction *)
 	    let funCode, _ = List.fold_left aux (nop, funEnv) b in
 	    let codefun = 
@@ -630,7 +592,7 @@ let compile_decl codefun codemain = function
 	       nb : on a this dans les arguments ! *)
 	    let classEnv = classObj#offs_var_map in
 	    (* Mise à jour de l'env *)
-	    let tempEnv = allocate_args 4 argList in
+	    let tempEnv = allocate_args true argList in
 	    let metEnv = Smap.add "this" 0 tempEnv in
 	    (* Code de la méthode *)
 	    let aux (code, lenv) ins = 
@@ -652,8 +614,7 @@ let compile_decl codefun codemain = function
 	    codefun, codemain
 	  | _, _ -> assert false
 	)
-      | Method (cla, ident)  -> assert false
-      | Cons cl-> assert false
+      | Tident s -> assert false
     )
 
 let compile p ofile =
