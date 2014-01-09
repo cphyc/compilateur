@@ -4,7 +4,7 @@ open Tast
 (* On crée un dictionnaire associant à chaque variable son type *)
 module Smap = Map.Make(String)
 (* Environnement global : à chaque variable un type *)
-let genv: (string, typ) Hashtbl.t = Hashtbl.create 42
+let genv: (typ Smap.t) ref = ref Smap.empty
 
 let classInheritances: (string, string) Hashtbl.t = Hashtbl.create 17
 let classFields: (string, string * typ) Hashtbl.t = Hashtbl.create 17
@@ -592,7 +592,7 @@ let declTyper = function
       ( List.map (fun var -> let nv = varTyper atyp var in
 			     	if Hashtbl.mem functionsTable nv.varIdent 
 	then raise (Error ("Variable déjà utilisée",dv.Ast.declVarsLoc));
-			    Hashtbl.add genv nv.varIdent nv.varTyp;
+			    genv := Smap.add nv.varIdent nv.varTyp !genv;
 			    nv) vlist)   
     
   | Ast.DeclClass c -> 
@@ -621,8 +621,7 @@ let declTyper = function
        global ajouté aux types de tous les paramètres, ainsi que this si
        nécessaire*)
 
-    let env, argList, typList = argumentTyper Smap.empty p.Ast.argumentList in
-
+    let env, argList, typList = argumentTyper !genv p.Ast.argumentList in
     (* On ajoute la valeur de retour dans l'environnement local ce qui permet
        d'avoir son type *)
     
@@ -636,7 +635,7 @@ let declTyper = function
       | Ident s -> (* Fonctions *)
 	if Hashtbl.mem functionsTable s 
 	then raise (Error ("Fonction déjà définie",p.Ast.protoLoc));
-	if Hashtbl.mem  genv s
+	if Smap.mem s !genv
 	then raise (Error ("Nom déjà utilisé",p.Ast.protoLoc)); 
 	(* On ajoute la fonction à la liste des fonctions *)
 	Hashtbl.add functionsTable s (t', typList);
