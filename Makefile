@@ -1,5 +1,5 @@
 CMO=tokens.cmo lexer.cmo parser.cmo typer.cmo mips.cmo compile.cmo main.cmo 
-COMPILER = ocamlc
+COMPILER = ocamlc -g
 LEXER = ocamllex
 PARSER = menhir
 PARSER-OPTS = 
