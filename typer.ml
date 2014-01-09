@@ -221,8 +221,10 @@ let memberConverter s0 = function
       let q' = qvarTyper t.Ast.typCont q in
       let s = match q'.qvarIdent with
 	| Ident s -> s	  
-	| IdentIdent (s1, s2) -> if s1 == s0 then s2 else 
-	    raise (Error ("pas la même classe", p.Ast.protoLoc))
+	| IdentIdent (s1, s2) -> 
+	  if s1 == s0 
+	  then raise (Error ("extra-qualification", p.Ast.protoLoc))
+	  else raise (Error ("pas la même classe", p.Ast.protoLoc))
       in
       let l = Hashtbl.find_all methodsTable (s0,s) in
       if List.exists (eqProf lt) (snd (List.split l))
