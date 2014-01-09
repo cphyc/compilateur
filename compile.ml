@@ -248,7 +248,8 @@ let rec compile_expr ex lenv = match ex.exprCont with
     | ExprQident (Ident s) -> (* appel de fonction *)
       let size, funlab, sizeList = Hashtbl.find functionsTable s in
       let codeArgs = 
-	List.fold_left (fun code expr -> code ++ compile_expr expr lenv) nop l in
+	(* On fold à droite pour avoir dans le bon sens *)
+	List.fold_right (fun expr code -> code ++ compile_expr expr lenv) l nop in
           comment (" appel de la fonction "^s)
       ++  comment " construction de la pile"
       ++  codeArgs

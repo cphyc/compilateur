@@ -46,7 +46,7 @@ test: $(BIN) test.cpp
 	@$(MARS) test.s | tail -n +3
 
 g++: test.cpp
-	@echo "########## Sortie pour le fichier compilé par gcc :"
+	@echo "########## Sortie pour le fichier compilé par g++ :"
 	@g++ test.cpp -o /tmp/test -fpermissive
 	@/tmp/test
 
