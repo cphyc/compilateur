@@ -1,5 +1,5 @@
 #!/bin/sh
-if [ $1 = "parse" ]; then
+if [ $1 == "parse" ]; then
     
     echo "#-##############################"
     echo "--parse-only sur docs/tests/syntax/bad/*"
@@ -41,3 +41,21 @@ if [ $1 == "type" ]; then
 	echo
     done
 fi
+
+if [ $1 == "exec" ]; then
+    for file in docs/tests/exec/*.cpp
+    do
+	if [ $ans == "q" ]; then break ;fi
+	echo "Fichier " $file
+	echo "################### Sortie attendue ##################"
+	g++ $file -o /tmp/caca ; /tmp/caca
+	echo "################### Sortie mips ##################"
+	./minic++ $file && 
+	java -jar /opt/mars/Mars.jar `echo $file | cut -d "." -f -1`".s" | tail -n +3
+	
+	echo "Entrée pour passer au suivant, 'q' pour quitter."
+	read ans
+	echo 
+    done
+fi
+	
