@@ -13,8 +13,8 @@ and decl =
     
 and declVars = var list
   
-and declClass = {className: string; supersOpt: supers option;
-                 memberList: member list}
+and declClass = { className: string; supersOpt: supers option;
+                  memberList: member list}
   
 and supers = string list
   

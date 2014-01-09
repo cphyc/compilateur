@@ -3,20 +3,85 @@ open Format
 open Mips
 open Tast
 
-(* Environnement global *)
-(* associe à un identificateur un couple de label * taille_de_la_variable *)
-let (genv : (string, string * int list) Hashtbl.t) = Hashtbl.create 17
-
-(* Table de hashage associant à un identifieur sa taille, son label et la taille 
-   de ses args *)
-let functionsTable: (string, int * string * int list) Hashtbl.t = Hashtbl.create 17
-
-let vrai = 1
-let faux = 0
+(********************* Variables globales ********************)
 (* Ensemble des chaines de caractère *)
 module Smap = Map.Make(String)
 let dataMap = ref Smap.empty
 
+(* Environnement global *)
+(* associe à un identificateur un couple de label * taille_de_la_variable *)
+let (genv : (string, string * int) Hashtbl.t) = Hashtbl.create 17
+
+(* Table de hashage associant à un identificateur sa taille, son label et la taille 
+   de ses args *)
+let functionsTable: (string, int * string * int list) Hashtbl.t = Hashtbl.create 17
+
+(* "pushn size" empile "size" octets sur la pile *)
+let pushn = sub sp sp oi
+  
+class classObject = object
+  val mutable initCode : text = nop
+  val mutable map : (int*int) Smap.t = Smap.empty
+  val mutable declClass = {className = ""; supersOpt = None; memberList = []}
+  val mutable size = 0
+  method init = initCode
+  method mapping = map 
+  method size = size
+  method decl = declClass
+  method offset s = fst (Smap.find s map)
+  method build c =
+    let rec sizeof = function
+      | TypNull -> assert false
+      | TypVoid -> 4 
+      | TypInt -> 4
+      | TypIdent s -> assert false (* (Hashtbl.find classTable s)#size *)
+      | TypPointer t -> sizeof t
+    in
+    (* Construit l'environnement, le code d'initialisation, calcul la taille et 
+       renvoie le tout *)
+    (* On s'occupe des supers *)
+    let rec supersRunner env = function
+      | None -> Smap.empty
+      | Some super -> assert false
+    in
+    let superEnv = supersRunner Smap.empty c.supersOpt in
+       
+    (* À l'aide de cet env, on s'occupe des membres *)
+    let rec memberListRunner env = function
+      | [] -> env
+      | member::mlist -> ( match member with
+	| MemberDeclVars dv -> 
+	  List.fold_left (fun env var ->
+	    Smap.add var.varIdent (sizeof var.varTyp) env)
+	    (memberListRunner env mlist) dv
+	| VirtualProto _ -> assert false
+      )
+    in 
+    let memberListEnv = memberListRunner superEnv c.memberList in
+       
+    (* On transforme l'environnement donnant les tailles en un environnement donnant
+       la position par rapport au début ET les tailles*)
+    let first_free, offsEnv = Smap.fold (fun ident size (first_free, offsMap) -> 
+      (first_free + size),
+      Smap.add ident (first_free, size) offsMap) memberListEnv (0, Smap.empty)
+    in
+    (* On sauvegarde le tout *)
+    initCode <- Smap.fold (fun ident size code -> 
+      code 
+      ++  comment ("Membre "^ident)
+      ++  pushn size) memberListEnv nop;
+    map <- offsEnv;
+    declClass <- c;
+    size <- first_free
+end
+(* Une classe : une déclaration, une map des tailles*positions, un code 
+   d'initialisation, une taille *)
+let classTable: (string, classObject) Hashtbl.t = Hashtbl.create 17
+
+(* Associe à variable de classe sa map *)
+let classVars: (string, (int*int) Smap.t) Hashtbl.t = Hashtbl.create 17
+let vrai = 1
+let faux = 0
 
 (********************* Utilitaires ********************)
 (* compteur pour de belles étiquettes *)
@@ -30,9 +95,9 @@ let new_label () = labelint := !labelint + 1;
 (* renvoie la taille d'un type *)
 let rec sizeof = function
 | TypNull -> assert false
-| TypVoid -> 4 (* À vérifier *)
+| TypVoid -> 4 
 | TypInt -> 4
-| TypIdent s -> assert false
+| TypIdent s -> (Hashtbl.find classTable s)#size
 | TypPointer t -> sizeof t
 
 (* Parcourt l'arbre de syntaxe jusqu'à trouver l'identificateur d'une qvar *)
@@ -44,14 +109,26 @@ let rec get_ident = function
   end
   | QvarPointer qvar | QvarReference qvar -> get_ident qvar
 
-(* "pushn size" empile "size" octets sur la pile *)
-let pushn = sub sp sp oi
-
 (* () -> mips *)
-let save_fp_ra = comment " Sauvegarde de fp:" ++ push fp
-  ++ comment " Sauvegarde de ra:" ++ push ra
+let save_fp_ra = 
+       comment " sauvegarde de fp" 
+  ++   push fp
+  ++   comment " sauvegarde de ra"
+  ++   push ra
 let restore_ra_fp = lw ra areg (-8, fp) ++ lw fp areg (-4, fp)
 
+let print_int = 
+      comment " print_int" 
+  ++  li v0 1 
+  ++  syscall
+
+let print_label label = 
+      comment (" print word at "^label) 
+  ++  la a0 alab label 
+  ++  li v0 4
+  ++  syscall
+
+(********************* Allocateurs ********************)
 (* alloue de la mémoire pour les arguments d'un appel de fonction *)
 let rec allocate_args shift = function
   | [] -> Smap.empty
@@ -69,7 +146,29 @@ let allocate_var v lenv =
     with Not_found -> "", -8
   in
   Smap.add v.varIdent (offset - sizeof v.varTyp) lenv
-  
+
+type member = MemVar of string * typ | MemFun
+(* transforme tous les membres en une belle liste, puis les place dans un Smap *)
+let rec memberSize_list ml =
+  let rec aux = function
+    | MemberDeclVars [] -> []
+    | MemberDeclVars (v::vlist) -> 
+      MemVar (v.varIdent, v.varTyp) :: (aux (MemberDeclVars vlist))
+    | VirtualProto _ -> assert false
+  in
+  let rec memList = function
+    | [] -> []
+    | member :: mlist -> List.append (aux member) (memList mlist)
+  in
+  List.fold_left 
+    (fun map member ->
+      let ident, size = (match member with
+	| MemVar (id,t) -> id, sizeof t
+	| MemFun -> assert false)
+      in
+      Smap.add ident size map) Smap.empty (memList ml)
+    
+
 let funQvar_to_ident = function
   | QvarQident qident -> ( match qident with
     | Ident s -> s
@@ -120,7 +219,18 @@ let rec compile_expr ex lenv = match ex.exprCont with
       | IdentIdent (s1,s2) -> assert false
     end
   | ExprStar e -> assert false
-  | ExprDot (e,s) -> assert false
+  | ExprDot (e,s) -> (match e.exprTyp with 
+    | TypIdent c -> 
+      let offset = (Hashtbl.find classTable c)#offset s in
+          comment "Variable de classe "
+      ++  compile_expr {exprTyp = e.exprTyp; exprCont = ExprStar e} lenv 
+      ++  pop a0              (* on a l'adresse % fp, et l'offset *)
+      ++  add a0 a0 oi offset (* on a dans a0 l'adresse de la variable *)
+      ++  la a0 areg (0, a0)  (* on charge la variable dans a0 *)
+      ++  push a0
+    | TypPointer (TypIdent c) -> assert false
+    | _ -> assert false
+  )
   | ExprEqual (e1,e2) -> (* On compile l'expression e1, c'est une lvalue donc 
 			    le résultat est son adresse *)
     compile_LVexpr lenv e1.exprCont
@@ -195,6 +305,44 @@ let rec compile_expr ex lenv = match ex.exprCont with
     end
   | ExprParenthesis e -> compile_expr e lenv
 
+(* (\* Différent du déclaration de variable, car ici, on ajoute dans la table de hashage *)
+(*    les informations pertinentes. *\) *)
+(* (\* prend un argument position pour savoir quelle est la position de la variable *)
+(*    par rapport au début *\) *)
+(* let rec alloc_declVar env first_free = function *)
+(*   | [] -> nop, Smap.empty *)
+(*   | var::varList ->  *)
+(*     let size = sizeof var.varTyp in *)
+(*     let code, lenv, new_first_free =  *)
+(*       if Smap.mem var.varIdent env (\* variable déjà stockée, grace à l'héritage *\) *)
+(*       then  *)
+(* 	nop, env, first_free *)
+(*       else  *)
+(* 	pushn size, Smap.add var.varIdent first_free env, first_free+size *)
+(*     in *)
+(*     let allocCode, allocEnv, nnew_fst_free = *)
+(*       alloc_declVar lenv new_first_free varList in *)
+(*     code ++ allocCode, allocEnv, nnew_fst_free *)
+
+(* (\* Renvoie le code d'initialisation ainsi que les membres de la classe (Smap) *\) *)
+(* let rec alloc_class first_free c =  *)
+(*   ( match c.supersOpt with  *)
+(*   | None ->( (\* on travaille sur c.memberList *\) *)
+(*     let rec process env first_free = function *)
+(*       | [] -> nop, Smap.empty *)
+(*       | (MemberDeclVars varList) :: reste -> *)
+(* 	let code, env, new_first_free = alloc_declVar env first_free varList in *)
+(* 	let resteCode, resteEnv = process env new_first_free varList in *)
+(* 	code ++ resteCode, resteEnv	 *)
+(*       | VirtualProto (b, p) -> assert false *)
+(*     in *)
+(*     let code, env = process c.memberList in *)
+(*     code, env *)
+(*   ) *)
+(*   | Some (c::cList) -> (\* on a des supers *\)assert false *)
+(*   ) *)
+
+
 (* sig : code -> lenv -> sp -> code, lenv
    Renvoie le code completé de celui de l'instruction.
    TODO : etre cohérent et avoir compile_ins qui ne prend pas code en argument.
@@ -203,14 +351,14 @@ let rec compile_ins lenv sp = function
   | InsSemicolon -> nop, lenv
   | InsExpr e -> (* le résultat est placé en sommet de pile *)
       compile_expr e lenv, lenv
-  | InsDef (v,op) ->
+  | InsDef (v, op) ->
     let comm = comment (" allocation de la variable "^v.varIdent) in
-    let s = sizeof v.varTyp in
     let nlenv = allocate_var v lenv in
     let rhs = match op with
-      | None -> pushn s
+      | None -> pushn (sizeof v.varTyp)
       | Some InsDefExpr e -> compile_expr e nlenv
-      | Some InsDefIdent (str, elist) -> assert false
+      | Some InsDefIdent (c, elist) -> (* Classe *)
+	(Hashtbl.find classTable c)#init
     in
     comm ++ rhs, nlenv
   | InsIf (e,i) -> (* astuce de faineant *)
@@ -255,13 +403,13 @@ let rec compile_ins lenv sp = function
     let aux (code, lenv) = function
       | ExprStrExpr e -> 
 	let newcode = 
-	  (compile_expr e lenv) ++ pop a0 ++ jal "print_int"	
+	  (compile_expr e lenv) ++ pop a0 ++ print_int
 	in code ++ newcode, lenv
       | ExprStrStr s ->
 	let lab = new_label () in
 	dataMap := Smap.add lab s !dataMap;
 	(* Il faut maintenant l'afficher *)
-	code ++ la a0 alab lab ++ li v0 4 ++ syscall, lenv
+	code ++	print_label lab, lenv
     in
     let inscode, nlenv = (List.fold_left aux (nop, lenv) l) in
     let comm = comment " cout" in
@@ -281,12 +429,17 @@ let compile_decl codefun codemain = function
     let rec process = function
       | [] -> ()
       | var::vlist -> 
-	Hashtbl.add genv var.varIdent (new_label (), [sizeof var.varTyp]);
+	Hashtbl.add genv var.varIdent (new_label (), sizeof var.varTyp);
 	process vlist
     in
     process vlist;
     nop, nop
-  | DeclClass _ -> assert false
+  | DeclClass c -> (* On se contente juste d'ajouter la classe dans la table *)
+    let newClass = new classObject in
+    newClass#build c;
+    Hashtbl.add classTable c.className newClass;
+    nop, nop
+ 
   | ProtoBloc (p, b) -> 
     (
       let var, argList = p.protoVar, p.argumentList in
@@ -341,6 +494,14 @@ let compile_decl codefun codemain = function
 let compile p ofile =
   let aux (codefun, codemain) = compile_decl codefun codemain in 
   let codefun, code = List.fold_left aux (nop, nop) p.fichierDecl in
+  let strings = Smap.fold 
+    (fun lab word data -> data ++ label lab ++ asciiz word) !dataMap nop 
+  and globalVars = 
+    Hashtbl.fold 
+      (fun str (lab, size) code -> code 
+	++ comment (" nid douillet de la variable "^str) 
+	++ label lab ++ dword [size]) genv nop
+  in
   let p =
     { text =
 	label "main"
@@ -349,18 +510,10 @@ let compile p ofile =
     ++  comment "sortie du programme"
     ++  li v0 10
     ++  syscall
-    ++  label "print_int"
-    ++  li v0 1
-    ++  syscall
-    ++  jr ra
     ++  codefun;
       data = 
-	Smap.fold 
-	  (fun lab word data -> data ++ label lab ++ asciiz word) !dataMap nop
-    ++  Hashtbl.fold 
-	  (fun str (lab, sizes) code -> code 
-	    ++ comment (" nid douillet de la variable "^str) 
-	    ++ label lab ++ dword sizes) genv nop
+	strings
+    ++  globalVars
     ++  label "newline"
     ++  asciiz "\n"
     }
