@@ -322,14 +322,14 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
       ++  lw a0 areg (0, a0)  (* on charge la variable dans a0 *)
       ++  push a0
     | _ -> assert false
-  )
+    )
   | ExprEqual (e1,e2) -> (* On compile l'expression e1, c'est une lvalue donc 
 			    le résultat est son adresse *)
     compile_LVexpr lenv cenv e1.exprCont
     ++ comment " calcul de la valeur droite" ++ compile_expr e2 lenv cenv 
     ++ pop a1 ++ pop a0 
     ++ comment " sauvegarde de la valeur" ++ sw a1 areg (0, a0)
-  | ExprApply (e,p,l) -> ( 		(* cadeau : p profil cherché *)
+  | ExprApply (e, p, l) -> ( 		(* cadeau : p profil cherché *)
     match e.exprCont with
     | ExprQident (Ident s) -> (* appel de fonction *)
       (* On recherche le profil correspondant *)
@@ -373,16 +373,51 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
     | _ -> assert false
   )
   | ExprNew (s, l) -> assert false
-  | ExprRIncr e | ExprLIncr e -> (* On compile l'expression, on ajoute un et on la stocke *)
+  | ExprRIncr e ->(* compile e, le renvoie puis l'incrémente *)
         compile_LVexpr lenv cenv e.exprCont
-    ++  pop a0                (* adresse de l'expression *)
+    ++  comment " adresse de l'expression"
+    ++  pop a0
+    ++  comment " on récupère la valeur"
     ++  lw a1 areg (0, a0)
+    ++  comment " on la place sur la pile"
+    ++  push a1
+    ++  comment " on incrémente"
     ++  add a1 a1 oi 1 
     ++  sw a1 areg (0, a0)
+  | ExprLIncr e -> (* compile e, l'incrément puis le renvoie *)
+        compile_LVexpr lenv cenv e.exprCont
+    ++  comment " adresse de l'expression"
+    ++  pop a0                (* adresse de l'expression *)
+    ++  comment " on récupère la valeur"
+    ++  lw a1 areg (0, a0)
+    ++  comment " on incrémente"
+    ++  add a1 a1 oi 1 
+    ++  sw a1 areg (0, a0)
+    ++  comment " on la place sur la pile"
     ++  push a1
-  | ExprRDecr e 
-  | ExprLDecr e -> compile_expr e lenv cenv
-    ++ comment " Décrémentation" ++ pop a0 ++ sub a0 a0 oi 1 ++ push a0
+  | ExprRDecr e ->
+        compile_LVexpr lenv cenv e.exprCont
+    ++  comment " adresse de l'expression"
+    ++  pop a0
+    ++  comment " on récupère la valeur"
+    ++  lw a1 areg (0, a0)
+    ++  comment " on la place sur la pile"
+    ++  push a1
+    ++  comment " on incrémente"
+    ++  sub a1 a1 oi 1 
+    ++  sw a1 areg (0, a0)
+
+  | ExprLDecr e -> (* On compile l'expression, on ajoute un et on la stocke *)
+        compile_LVexpr lenv cenv e.exprCont
+    ++  comment " adresse de l'expression"
+    ++  pop a0                (* adresse de l'expression *)
+    ++  comment " on récupère la valeur"
+    ++  lw a1 areg (0, a0)
+    ++  comment " on incrémente"
+    ++  sub a1 a1 oi 1 
+    ++  sw a1 areg (0, a0)
+    ++  comment " on la place sur la pile"
+    ++  push a1
   | ExprAmpersand e -> assert false
   | ExprExclamation e ->
     let lab2, lab1 = new_label (), new_label () in
