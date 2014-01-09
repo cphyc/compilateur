@@ -14,10 +14,28 @@ let (genv : (string, string * int) Hashtbl.t) = Hashtbl.create 17
 
 (* Table de hashage associant à un identificateur sa taille, son label et la taille 
    de ses args *)
-let functionsTable: (string, int * string * int list) Hashtbl.t = Hashtbl.create 17
+let functionsTable: (string, int * string * typ list) Hashtbl.t = Hashtbl.create 17
 
 (* "pushn size" empile "size" octets sur la pile *)
 let pushn = sub sp sp oi
+class methodObject l r t s v = object (self)
+  val mutable lab:string option = l
+  val is_ref:bool = r 
+  val typ : typ = t
+  val signature : typ list = s
+  val virt : bool = v
+  method get_sign = signature
+  method get_lab : text = match lab with None -> assert false | Some s -> label s
+  method set_lab s = lab <- Some s
+end
+
+class consObject l t s = object
+  val mutable lab:string option = l
+  val typ:typ = t
+  val signature:typ list = s
+  method set_lab s = lab <- Some s
+  method get_lab : text = match lab with None -> assert false | Some s -> label s 
+end
 
 class classObject classTable = object (self)
   val mutable initCode : text = nop
@@ -25,16 +43,22 @@ class classObject classTable = object (self)
   val mutable parents : classObject list = []
   val mutable declClass = {className = ""; supersOpt = None; memberList = []}
   val mutable size = 0
-  val mutable methods : (label option*bool*typ*typ list*bool) Smap.t = Smap.empty
-  val mutable cons : (label option*typ*typ list) Smap.t = Smap.empty
+  val mutable methods : methodObject list Smap.t = Smap.empty
+  val mutable cons : consObject list = []
   method init = initCode
-  method mapping = map 
+  method offs_var_map = Smap.map (fun (a,_) -> a) map
   method size = size
   method decl = declClass
   method offset s = fst (Smap.find s map)
-  method add_method str lab is_ref typ sign virt = 
-    methods <- Smap.add str (lab, is_ref, typ, sign, virt) methods
-  method add_cons str lab typ sign = cons <- Smap.add str (lab, typ, sign) cons
+  method add_method str m =
+    let mList = try Smap.find str methods with Not_found -> [] in
+    let list = m :: mList in
+    methods <- Smap.add str list methods
+  method add_method_label str sign lab =
+    let mlist = Smap.find str methods in
+    let obj = List.find (fun meth -> meth#get_sign == sign) mlist in
+    obj#set_lab lab;
+  method add_cons str consObj = cons <- consObj :: cons
   method build c =
     let rec sizeof = function
       | TypNull -> assert false
@@ -71,13 +95,21 @@ class classObject classTable = object (self)
 	    let typ = qvar.qvarTyp in
 	    (
 	      match qvar.qvarIdent with
-	      | Ident s -> self#add_method s None is_ref typ signature virt
+		(* Constructeurs *)
+	      | Ident s when s == declClass.className -> (* Contructeur *)
+		self#add_cons s (new consObject None typ signature);
+	      | IdentIdent (s1, s2) when s2 == declClass.className ->
+		assert (s1 == declClass.className);
+		self#add_cons s1 (new consObject None typ signature);
+                (* Méthodes *)
+	      | Ident s ->  
+		self#add_method s 
+		  (new methodObject None is_ref typ signature virt)
 	      | IdentIdent (s1, s2) -> assert (s1 == declClass.className);
-		self#add_method s2 None is_ref typ signature virt
+		self#add_method s2 
+		  (new methodObject None is_ref typ signature virt)
 	    )
-	  | Cons s when s == declClass.className -> 
-	      self#add_cons s None TypNull signature
-	  | Cons _ | Method (_,_) -> assert false
+	  | _ -> assert false
 	  );
 	  env
       )
@@ -153,7 +185,7 @@ let print_label label =
 let rec allocate_args shift = function
   | [] -> Smap.empty
   | v::vlist -> let new_shift = shift + sizeof v.varTyp in
-		Smap.add v.varIdent shift (allocate_args new_shift vlist)
+		(Smap.add v.varIdent shift (allocate_args new_shift vlist))
 
 (* alloue de la mémoire pour une variable en cherchant le plus petit offset (% à fp)
    et empile en dessous. Si l'env est vide, renvoie - 8 (car on a sauvé fp et sp).*)
@@ -189,25 +221,36 @@ let rec memberSize_list ml =
       Smap.add ident size map) Smap.empty (memList ml)
     
 let funQvar_to_ident q = match q.qvarIdent with
-    | Ident s -> s
-    | _ -> assert false
+    | Ident s -> Some s, None
+    | IdentIdent (s1, s2) -> Some s1, Some s2
 
 (******************** Compilation ********************)
-let rec compile_LVexpr lenv = function
+let rec compile_LVexpr lenv cenv = function
   | ExprQident q -> begin match q with
     | Ident s ->
       begin
-	try let pos = Smap.find s lenv in (* Variable locale *)
+	if Smap.mem s lenv then (* Variable locale *)
+	  let pos = Smap.find s lenv in 
 	       comment (" variable locale "^s) 
 	    ++ li a0 pos 
 	    ++ add a0 a0 oreg fp 
 	    ++ push a0
-	with
-	  Not_found -> (* Variable globale *)
-	    let lab, _ = Hashtbl.find genv s in
-	    comment (" variable globale au label "^lab) 
-	    ++ la a0 alab lab
-	    ++ push a0
+	else if Smap.mem s cenv then (* Variable de class *)
+	  let offset = Smap.find s cenv in 
+	  let this = Smap.find "this" lenv in
+	      comment (" variable de classe "^s)
+	  ++  comment "  récupération de this"
+	  ++  li a0 this
+	  ++  add a0 a0 oreg fp
+	  ++  comment ("  récupération de la variable "^s)
+	  ++  li a1 offset
+	  ++  add a0 a0 oreg a1
+	  ++  push a0
+	else (* Variable globale *)
+	  let lab, _ = Hashtbl.find genv s in
+	  comment (" variable globale au label "^lab) 
+	  ++ la a0 alab lab
+	  ++ push a0
       end
     | IdentIdent (s1, s2) -> assert false
   end
@@ -217,7 +260,7 @@ let rec compile_LVexpr lenv = function
     | TypIdent c -> (* On un directement une classe *)
       let offset = (Hashtbl.find classTable c)#offset s in
           comment (" Variable de class "^s)
-      ++  compile_LVexpr lenv e.exprCont
+      ++  compile_LVexpr lenv cenv e.exprCont
       ++  pop a0              (* on a l'adresse % fp, et l'offset *)
       ++  add a0 a0 oi offset (* on a dans a0 l'adresse de la variable *)
       ++  push a0             (* on pousse l'adresse variable *)
@@ -226,19 +269,26 @@ let rec compile_LVexpr lenv = function
     )
   | _ -> assert false
 
-let rec compile_expr ex lenv = match ex.exprCont with
+let rec compile_expr ex lenv cenv = match ex.exprCont with
 (* Compile l'expression et place le résultat au sommet de la pile *)
   | ExprInt i -> li a0 i ++ push a0
   | This -> assert false
   | Null -> assert false
-  | ExprQident q -> begin  match q with 
+  | ExprQident q -> begin match q with 
     | Ident s -> 
       (* Pas la peine de vérifier que ça a été déclaré, on l'a déjà fait *)
       let instruction =
-	try
+	if Smap.mem s lenv then (* Variable locale *)
 	  let offset = Smap.find s lenv in
 	  lw a0 areg (offset, fp)
-	with Not_found ->
+	else if Smap.mem s cenv then (* Membre d'une classe *)
+	  let this_offset = Smap.find "this" lenv in
+	  let var_offset = Smap.find s cenv in
+	      comment " position de this"
+	  ++  add a0 fp oi this_offset
+	  ++  comment " chargement de la variable"
+	  ++  lw a0 areg (var_offset, a0)
+	else
 	  let lab, _ = Hashtbl.find genv s in
 	  lw a0 alab lab
       in
@@ -253,7 +303,7 @@ let rec compile_expr ex lenv = match ex.exprCont with
     | TypIdent c -> 
       let offset = (Hashtbl.find classTable c)#offset s in
           comment (" Variable de class "^s)
-      ++  compile_LVexpr lenv e.exprCont
+      ++  compile_LVexpr lenv cenv e.exprCont
       ++  pop a0              (* on a l'adresse % fp, et l'offset *)
       ++  add a0 a0 oi offset (* on a dans a0 l'adresse de la variable *)
       ++  lw a0 areg (0, a0)  (* on charge la variable dans a0 *)
@@ -263,17 +313,20 @@ let rec compile_expr ex lenv = match ex.exprCont with
   )
   | ExprEqual (e1,e2) -> (* On compile l'expression e1, c'est une lvalue donc 
 			    le résultat est son adresse *)
-    compile_LVexpr lenv e1.exprCont
-    ++ comment " calcul de la valeur droite" ++ compile_expr e2 lenv 
+    compile_LVexpr lenv cenv e1.exprCont
+    ++ comment " calcul de la valeur droite" ++ compile_expr e2 lenv cenv 
     ++ pop a1 ++ pop a0 
     ++ comment " sauvegarde de la valeur" ++ sw a1 areg (0, a0)
   | ExprApply (e,p,l) -> ( 		(* cadeau : p profil cherché *)
     match e.exprCont with
     | ExprQident (Ident s) -> (* appel de fonction *)
-      let size, funlab, sizeList = Hashtbl.find functionsTable s in
+      (* On recherche le profil correspondant *)
+      let size, funlab, typList = 
+	List.find (fun (s, l, tl) -> tl == p)
+	  (Hashtbl.find_all functionsTable s) in
       let codeArgs = 
 	(* On fold à droite pour avoir dans le bon sens *)
-	List.fold_right (fun expr code -> code ++ compile_expr expr lenv) l nop in
+	List.fold_right (fun expr code -> code ++ compile_expr expr lenv cenv) l nop in
           comment (" appel de la fonction "^s)
       ++  comment " construction de la pile"
       ++  codeArgs
@@ -283,29 +336,35 @@ let rec compile_expr ex lenv = match ex.exprCont with
     | ExprQident (IdentIdent (s1,s2)) when s1==s2 -> assert false(* appel de cons *)
     | ExprQident (IdentIdent (s1,s2)) -> assert false (* appel de méthode *)
     | ExprParenthesis e -> assert false (* compile_expr lenv {ExprApply (e,l)} *)
-    | ExprDot _ -> assert false
+    | ExprDot (e,s) -> 
+      (* On compile l'adresse de e *)
+      let get_e_address = compile_LVexpr lenv cenv e.exprCont ++ pop a0 in
+      (* On trouve la classe grace au type *)
+      let typ = e.exprTyp in
+      (* On cherche s : variable ou méthode ? *)
+      assert false
     | _ -> assert false
   )
   | ExprNew (s, l) -> assert false
   (* TODO: Vérifier que ça ne change rien dans notre grammaire *)
-  | ExprRIncr e | ExprLIncr e -> compile_expr e lenv
+  | ExprRIncr e | ExprLIncr e -> compile_expr e lenv cenv
     ++ comment " Incrémentation" ++ pop a0 ++ add a0 a0 oi 1 ++ push a0
-  | ExprRDecr e | ExprLDecr e -> compile_expr e lenv
+  | ExprRDecr e | ExprLDecr e -> compile_expr e lenv cenv
     ++ comment " Décrémentation" ++ pop a0 ++ sub a0 a0 oi 1 ++ push a0
   | ExprAmpersand e -> assert false
   | ExprExclamation e ->
     let lab2, lab1 = new_label (), new_label () in
-    compile_expr e lenv
+    compile_expr e lenv cenv
     ++ comment " Négation logique" ++ pop a0 ++ beqz a0 lab1
     ++ comment "  cas non nul :" ++ li a0 faux ++ push a0 ++ b lab2
     ++ label lab1 ++ comment "  cas nul :" ++ li a0 vrai ++ push a0
     ++ label lab2
-  | ExprMinus e -> compile_expr e lenv ++ pop a0 
+  | ExprMinus e -> compile_expr e lenv cenv ++ pop a0 
     ++ comment " Négation arithmétique" ++ neg a0 a0 ++ push a0
-  | ExprPlus e -> compile_expr e lenv
+  | ExprPlus e -> compile_expr e lenv cenv
   | ExprOp (e1,o,e2) -> 
     begin
-      let ce1, ce2 = compile_expr e1 lenv, compile_expr e2 lenv in
+      let ce1, ce2 = compile_expr e1 lenv cenv, compile_expr e2 lenv cenv in
       let calc = ce1 ++ ce2 ++ pop a1 ++ pop a0 in
       let comp_op operator = calc ++ (operator a0 a0 a1) ++ push a0 in
       let arith_op operator = calc ++ (operator a0 a0 oreg a1) ++ push a0 in
@@ -334,51 +393,48 @@ let rec compile_expr ex lenv = match ex.exprCont with
 	++ push zero ++ b label2 ++ label label1 
 	++ li a0 vrai ++ push a0 ++ label label2
     end
-  | ExprParenthesis e -> compile_expr e lenv
+  | ExprParenthesis e -> compile_expr e lenv cenv
 
-(* sig : code -> lenv -> sp -> code, lenv
-   Renvoie le code completé de celui de l'instruction.
-   TODO : etre cohérent et avoir compile_ins qui ne prend pas code en argument.
-*)
-let rec compile_ins lenv sp = function
+(* lenv est de type offset*registre Smap.t *)
+let rec compile_ins lenv cenv sp = function
   | InsSemicolon -> nop, lenv
   | InsExpr e -> (* le résultat est placé en sommet de pile *)
-      compile_expr e lenv, lenv
+      compile_expr e lenv cenv, lenv
   | InsDef (v, op) ->
     let comm = comment (" allocation de la variable "^v.varIdent) in
     let s = sizeof v.varTyp in
     let nlenv = allocate_var v lenv in
     let rhs = match op with
       | None -> pushn s
-      | Some InsDefExpr e -> compile_expr e nlenv
+      | Some InsDefExpr e -> compile_expr e nlenv cenv
       | Some InsDefIdent (c, elist) -> (* Classe *)
 	(Hashtbl.find classTable c)#init
     in
     comm ++ rhs, nlenv
   | InsIf (e,i) -> (* astuce de faineant *)
-    compile_ins lenv sp (InsIfElse(e,i,InsSemicolon))
+    compile_ins lenv cenv sp (InsIfElse(e,i,InsSemicolon))
   | InsIfElse (e,i1,i2) -> 
     let if_true, if_false, way_out = new_label (), new_label (), new_label () in
-    let ins1, _ = compile_ins lenv sp i1 in
-    let ins2, _ = compile_ins lenv sp i2 in
-    compile_expr e lenv ++ pop a0 ++ bnez a0 if_true 
+    let ins1, _ = compile_ins lenv cenv sp i1 in
+    let ins2, _ = compile_ins lenv cenv sp i2 in
+    compile_expr e lenv cenv ++ pop a0 ++ bnez a0 if_true 
     ++ comment " si vrai :" ++ label if_true ++ ins1 ++ b way_out
     ++ comment " si faux :" ++ label if_false ++ ins2
     ++ label way_out, lenv
   | InsWhile (e,i) -> 
     let way_in, way_out = new_label(), new_label() in
-    let ins1, _ = compile_ins lenv sp i in
+    let ins1, _ = compile_ins lenv cenv sp i in
     comment " entrée de la boucle while" ++ label way_in 
-    ++ comment " test du while" ++ compile_expr e lenv ++ pop a0 ++ beqz a0 way_out
+    ++ comment " test du while" ++ compile_expr e lenv cenv ++ pop a0 ++ beqz a0 way_out
     ++ comment " coeur du while" ++ ins1 ++ b way_in
     ++ comment " sortie de la boucle while" ++ label way_out, lenv
   | InsFor (l1,e,l2,i) -> 
     let compile_expr_list = 
-      List.fold_left (fun code e -> code ++ compile_expr e lenv) nop in
+      List.fold_left (fun code e -> code ++ compile_expr e lenv cenv) nop in
     let init = compile_expr_list l1 in
-    let test = compile_expr e lenv in
+    let test = compile_expr e lenv cenv in
     let modify = compile_expr_list l2 in
-    let core, _ = compile_ins lenv sp i in
+    let core, _ = compile_ins lenv cenv sp i in
     let labtest, way_out = new_label (), new_label () in
     comment " initialisation de la boucle for" ++ init
     ++ comment " test de sa condition" ++ label labtest 
@@ -388,7 +444,7 @@ let rec compile_ins lenv sp = function
     ++ comment " sortie de la boucle for" ++ label way_out, lenv
   | InsBloc b ->
     let aux (code', lenv) ins =
-      let inscode, nlenv = compile_ins lenv sp ins in
+      let inscode, nlenv = compile_ins lenv cenv sp ins in
       code' ++ inscode, nlenv
     in
     let inslistcode, nlenv = (List.fold_left aux (nop, lenv) b) in
@@ -397,7 +453,7 @@ let rec compile_ins lenv sp = function
     let aux (code, lenv) = function
       | ExprStrExpr e -> 
 	let newcode = 
-	  (compile_expr e lenv) ++ pop a0 ++ print_int
+	  (compile_expr e lenv cenv) ++ pop a0 ++ print_int
 	in code ++ newcode, lenv
       | ExprStrStr s ->
 	let lab = new_label () in
@@ -410,10 +466,11 @@ let rec compile_ins lenv sp = function
     comm ++ inscode, nlenv
   | InsReturn eopt -> 
     let expr = match eopt with 
-      | Some e -> compile_expr e lenv
-      | None -> nop in
-        comment " quitte la fonction, résultat dans v0"
-    ++  expr
+      | Some e -> compile_expr e lenv cenv
+      | None -> nop 
+    in
+        expr
+    ++  comment " quitte la fonction, résultat dans v0"
     ++  pop v0
     ++  restore_ra_fp
     ++  jr ra, lenv
@@ -441,46 +498,84 @@ let compile_decl codefun codemain = function
       | Function qvar ->
 	let typ = qvar.qvarTyp in
 	let ident = funQvar_to_ident qvar in
+	let by_ref = qvar.qvarRef in
+	assert (not by_ref);
 	(
 	  match ident with
-	  | "main" ->
+	  | Some "main", None ->
 	    if typ != TypInt then raise (Error "main doit avoir le type int")
 	    else
 	      let aux (code, lenv) ins = 
-		let inscode, nlenv = compile_ins lenv 8 ins in
+		let inscode, nlenv = compile_ins lenv Smap.empty 8 ins in
 		code ++ inscode, nlenv
 	      in
 	      let lenv = allocate_args 0 p.argumentList in
 	      let codemain', _ = 
 		List.fold_left aux (codemain ++ save_fp_ra, lenv) b in
 	      codefun, la ra alab "main" ++ codemain'
-	  | s -> 
+	  | Some s, None -> 
 	    (* On ajoute la fonction à la table des fonctions *)
-	    let funlabel = new_label () in
-	    let sizeList = List.map (fun arg -> sizeof arg.varTyp) argList in
-	    Hashtbl.add functionsTable s (sizeof typ, funlabel, sizeList);
+	    let funLabel = new_label () in
+	    let typList = List.map (fun arg -> arg.varTyp) argList in
+	    Hashtbl.add functionsTable s (sizeof typ, funLabel, typList);
 	
 	    (* On compile le bloc *)
 	    let aux (code, lenv) ins = 
-	      let inscode, nlenv = compile_ins lenv 8 ins in
+	      let inscode, nlenv = compile_ins lenv Smap.empty 8 ins in
 	      code ++ inscode, nlenv
 	    in
-	    let lenv = allocate_args 0 p.argumentList in
-	    let ins_code, _ = List.fold_left aux (nop, lenv) b in
+	    (* On créée l'environnement local lié aux arguments *)
+	    let funEnv = allocate_args 0 argList in
+	    (* On produit le code de la fonction *)
+	    let funCode, _ = List.fold_left aux (nop, funEnv) b in
 	    let codefun = 
 	          codefun
 	      ++  comment (" fonction "^s)
-	      ++  label funlabel
+	      ++  label funLabel
 	      ++  move fp sp
 	      ++  save_fp_ra
-	      ++  ins_code
+	      ++  funCode
 	      ++  comment " restauration de ra et fp"
 	      ++  restore_ra_fp
 	      ++  comment " retour à la case départ"
 	      ++  jr ra
 	    in
-	    (* On renvoie le codefun amelioré *)
+	    (* On renvoie le tout *)
 	    codefun, codemain
+	  | Some cla, Some met -> (* Méthode *)
+	    (* On lui créée un label, qu'on indique à sa classe *)
+	    let metLabel = new_label() in
+	    (* On récupère sa signature *)
+	    let signature = List.map (fun arg -> arg.varTyp) argList in
+	    let classObj = Hashtbl.find classTable cla in
+	    (* On ajoute dans la classe le label de la méthode *)
+	    classObj#add_method_label met signature metLabel;
+	    (* On produit alors le code *)
+	    (* On créée l'environnement liée à la classe.
+	       nb : on a this dans les arguments ! *)
+	    let classEnv = classObj#offs_var_map in
+	    (* Mise à jour de l'env *)
+	    let tempEnv = allocate_args 4 argList in
+	    let metEnv = Smap.add "this" 0 tempEnv in
+	    (* Code de la méthode *)
+	    let aux (code, lenv) ins = 
+	      let inscode, nlenv = compile_ins lenv classEnv 8 ins in
+	      code ++ inscode, nlenv
+	    in
+	    let metCode, _ = List.fold_left aux (nop, metEnv) b in
+	    let codefun = 
+	          codefun
+	      ++  comment (" méthode "^met^" de la classe "^cla)
+	      ++  label metLabel
+	      ++  move fp sp
+	      ++  save_fp_ra
+	      ++  metCode
+	      ++  comment " restauration de ra et fp"
+	      ++  restore_ra_fp
+	      ++  comment " retour à la case départ"
+	      ++  jr ra in
+	    codefun, codemain
+	  | _, _ -> assert false
 	)
       | Method (cla, ident)  -> assert false
       | Cons cl-> assert false

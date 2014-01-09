@@ -56,8 +56,8 @@ and exprContT =
 | ExprStar of expr
 | ExprDot of expr * string
 | ExprEqual of expr * expr
+(* typ list : profil de la méthode appliquée *)
 | ExprApply of expr * (typ list) * (expr list) 
-(* typ list : profil de la methode appliquee *)
 | ExprNew of string * (expr list)
 | ExprLIncr of expr
 | ExprLDecr of expr
