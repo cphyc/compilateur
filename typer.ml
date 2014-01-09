@@ -654,7 +654,9 @@ let rec insTyper lenv ins = match ins.Ast.insCont with
 	  | _ -> raise (Error ("several profiles correspond", 
 			       ins.Ast.insLoc))
 	end
-      | None -> ( Smap.add tvar.varIdent tvar.varTyp lenv), InsDef (tvar, None) 
+      | None -> if not (typBF tvar.varTyp)
+	then raise (Error ("type mal formé", ins.Ast.insLoc));
+	( Smap.add tvar.varIdent tvar.varTyp lenv), InsDef (tvar, None) 
     end
   | Ast.InsIf (e, i) -> 
     let _, ni = insTyper lenv i in
