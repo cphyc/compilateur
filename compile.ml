@@ -163,12 +163,9 @@ let rec memberSize_list ml =
       in
       Smap.add ident size map) Smap.empty (memList ml)
     
-
-(* let funQvar_to_ident = function *)
-(*   | QvarQident qident -> ( match qident with *)
-(*     | Ident s -> s *)
-(*     | _ -> assert false) *)
-(*   | _ -> assert false *)
+let funQvar_to_ident q = match q.qvarIdent with
+    | Ident s -> s
+    | _ -> assert false
 
 (******************** Compilation ********************)
 let compile_LVexpr lenv = function
@@ -402,7 +399,8 @@ let compile_decl codefun codemain = function
     (
       let var, argList = p.protoVar, p.argumentList in
       match var with
-      | Function (typ, qvar) ->
+      | Function qvar ->
+	let typ = qvar.qvarTyp in
 	let ident = funQvar_to_ident qvar in
 	(
 	  match ident with
