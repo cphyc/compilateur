@@ -26,7 +26,9 @@ class methodObject l r t s v = object (self)
   val virt : bool = v
   method get_profile = profile
   method get_lab : string = match lab with None -> assert false | Some s -> s
-  method set_lab s = lab <- Some s
+  method set_lab label_creator = match lab with 
+  | None -> let newLab = label_creator () in lab <- Some newLab; newLab
+  | Some lab -> lab
 end
 
 class consObject l t s = object
@@ -54,10 +56,10 @@ class classObject classTable = object (self)
     let mList = try Smap.find str methods with Not_found -> [] in
     let list = m :: mList in
     methods <- Smap.add str list methods
-  method add_method_label str profile lab =
-    let mlist = Smap.find str methods in
-    let obj = List.find (fun meth -> meth#get_profile == profile) mlist in
-    obj#set_lab lab;
+  method add_method_label str profile label_creator =
+    (* On récupère la méthode associée, si ce n'est pas déjà fait, on lui assigne un label qu'on récup. *)
+    let met = match self#get_method str profile with None -> assert false | Some m -> m in
+    met#set_lab label_creator;
   method get_method str profile = (* On commence par chercher dans la classe, sinon
 				     on explore les supers *)
     (* On récupère la liste des méthodes dont le nom est str *)
@@ -97,37 +99,40 @@ class classObject classTable = object (self)
       | [] -> env
       | member::mlist -> ( match member with
 	| MemberDeclVars dv -> 
+	  (* On ajoute tous les copaines à l'environnement *)
 	  List.fold_left (fun env var ->
 	    Smap.add var.varIdent (sizeof var.varTyp) env)
 	    (memberListRunner env mlist) dv
 	| VirtualProto (virt, proto) -> 
-	  (* On calcule sa profile *)
+	  (* On calcule son profile *)
 	  let profile = 
-	    List.map (fun arg -> arg.varTyp) proto.argumentList in
+	    List.map (fun arg -> arg.varTyp) proto.argumentList 
+	  in
 	  (* On ajoute soit un constructeur, soit une méthode *)
-	  ( match proto.protoVar with
-	  | Function qvar -> (* Achtung si is_ref est vrai *)
-	    let is_ref = qvar.qvarRef in
-	    let typ = qvar.qvarTyp in
-	    (
-	      match qvar.qvarIdent with
-		(* Constructeurs *)
-	      | Ident s when s == declClass.className -> (* Contructeur *)
-		self#add_cons s (new consObject None typ profile);
-	      | IdentIdent (s1, s2) when s2 == declClass.className ->
-		assert (s1 == declClass.className);
-		self#add_cons s1 (new consObject None typ profile);
-                (* Méthodes *)
-	      | Ident s ->  
-		self#add_method s 
-		  (new methodObject None is_ref typ profile virt)
-	      | IdentIdent (s1, s2) -> assert (s1 == declClass.className);
-		self#add_method s2 
-		  (new methodObject None is_ref typ profile virt)
-	    )
-	  | _ -> assert false
-	  );
-	  env
+	  let _ =  match proto.protoVar with
+	    | Function qvar -> (* Achtung si is_ref est vrai *)
+	      let is_ref = qvar.qvarRef in
+	      let typ = qvar.qvarTyp in
+	      (
+		match qvar.qvarIdent with
+	      (* Constructeurs *)
+		| Ident s when s == declClass.className -> (* Contructeur *)
+		  self#add_cons s (new consObject None typ profile);
+		| IdentIdent (s1, s2) when s2 == declClass.className ->
+		  assert (s1 == declClass.className);
+		  self#add_cons s1 (new consObject None typ profile);
+              (* Méthodes *)
+		| Ident s -> 
+		  self#add_method s 
+		    (new methodObject None is_ref typ profile virt)
+		| IdentIdent (s1, s2) -> assert (s1 == declClass.className);
+		  self#add_method s2 
+		    (new methodObject None is_ref typ profile virt)
+	      )
+	    | _ -> assert false
+	  in
+	  (* On continue à traiter mlist *)
+	  memberListRunner env mlist
       )
     in 
     let memberListEnv = memberListRunner superEnv c.memberList in
@@ -145,7 +150,7 @@ class classObject classTable = object (self)
       ++  pushn size) memberListEnv nop;
     map <- offsEnv;
     declClass <- c;
-    size <- first_free
+    size <- first_free;
 end
 (* Une classe : une déclaration, une map des tailles*positions, un code 
    d'initialisation, une taille *)
@@ -263,7 +268,7 @@ let rec compile_LVexpr lenv cenv = function
 	  ++  add a0 a0 oreg a1
 	  ++  push a0
 	else (* Variable globale *)
-	  let lab, _ = Hashtbl.find genv s in
+	  let lab, _ = try Hashtbl.find genv s with _ -> raise (Error "pas trouvé !") in
 	  comment (" variable globale au label "^lab) 
 	  ++ la a0 alab lab
 	  ++ push a0
@@ -305,7 +310,7 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
 	  ++  comment " chargement de la variable"
 	  ++  lw a0 areg (var_offset, a0)
 	else
-	  let lab, _ = Hashtbl.find genv s in
+	  let lab, _ = try Hashtbl.find genv s with _ -> raise (Error ("pas trouvé "^s)) in 
 	  lw a0 alab lab
       in
       comment (" chargement variable "^s) ++ instruction
@@ -354,14 +359,14 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
     | ExprParenthesis e -> assert false (* compile_expr lenv {ExprApply (e,l)} *)
     | ExprDot (e,s) -> 
       (* On compile l'adresse de e *)
-      let get_e_address = compile_LVexpr lenv cenv e.exprCont ++ pop a0 in
+      (* let get_e_address = compile_LVexpr lenv cenv e.exprCont ++ pop a0 in *)
       (* On trouve la classe grace au type *)
       let className = match e.exprTyp with | TypIdent s -> s | _ -> assert false in
       (* On a la classe, on cherche alors le code de la méthode *)
       let classObj = Hashtbl.find classTable className in
       let metObject = match classObj#get_method s p with 
 	| None -> assert false | Some m -> m in
-      let offs_var_map = classObj#offs_var_map  in
+      (* let offs_var_map = classObj#offs_var_map  in *)
       let metLab = metObject#get_lab in
       (* On compile la pile d'argument *)
       let codeArgs = 
@@ -536,7 +541,9 @@ let compile_decl codefun codemain = function
 	let by_ref = qvar.qvarRef in
 	assert (not by_ref);
 	(
+	  (* ident est soit un string tout seul (une fonction), soit un couple de string (methode ou cons) *)
 	  match ident with
+	    (* Fonction main *)
 	  | Some "main", None ->
 	    if typ != TypInt then raise (Error "main doit avoir le type int")
 	    else
@@ -548,6 +555,8 @@ let compile_decl codefun codemain = function
 	      let codemain', _ = 
 		List.fold_left aux (codemain ++ save_fp_ra, lenv) b in
 	      codefun, la ra alab "main" ++ codemain'
+
+	  (* Fonction quelconque *)
 	  | Some s, None -> 
 	    (* On ajoute la fonction à la table des fonctions *)
 	    let funLabel = new_label () in
@@ -577,18 +586,21 @@ let compile_decl codefun codemain = function
 	    in
 	    (* On renvoie le tout *)
 	    codefun, codemain
+
+	  (* Méthode met de la classe cla *)
 	  | Some cla, Some met -> (* Méthode *)
-	    (* On lui créée un label, qu'on indique à sa classe *)
-	    let metLabel = new_label() in
-	    (* On récupère sa profile *)
+	    (* On récupère son profile *)
 	    let profile = List.map (fun arg -> arg.varTyp) argList in
+	    (* On récupère la classe *)
 	    let classObj = Hashtbl.find classTable cla in
-	    (* On ajoute dans la classe le label de la méthode *)
-	    classObj#add_method_label met profile metLabel;
+	    (* On initialise le label de la méthode *)
+	    let metLabel = classObj#add_method_label met profile new_label in
 	    (* On produit alors le code *)
 	    (* On créée l'environnement liée à la classe.
 	       nb : on a this dans les arguments ! *)
 	    let classEnv = classObj#offs_var_map in
+	    Smap.iter (fun x pos -> print_string (x^" en position "); Format.print_int pos; printf "@.")
+	      classEnv;
 	    (* Mise à jour de l'env *)
 	    let tempEnv = allocate_args 4 argList in
 	    let metEnv = Smap.add "this" 0 tempEnv in
