@@ -19,7 +19,7 @@ let functionsTable: (string, int * string * int list) Hashtbl.t = Hashtbl.create
 (* "pushn size" empile "size" octets sur la pile *)
 let pushn = sub sp sp oi
   
-class classObject = object
+class classObject classTable = object
   val mutable initCode : text = nop
   val mutable map : (int*int) Smap.t = Smap.empty
   val mutable declClass = {className = ""; supersOpt = None; memberList = []}
@@ -34,7 +34,7 @@ class classObject = object
       | TypNull -> assert false
       | TypVoid -> 4 
       | TypInt -> 4
-      | TypIdent s -> assert false (* (Hashtbl.find classTable s)#size *)
+      | TypIdent s -> (Hashtbl.find classTable s)#size
       | TypPointer t -> sizeof t
     in
     (* Construit l'environnement, le code d'initialisation, calcul la taille et 
@@ -77,6 +77,7 @@ end
 (* Une classe : une déclaration, une map des tailles*positions, un code 
    d'initialisation, une taille *)
 let classTable: (string, classObject) Hashtbl.t = Hashtbl.create 17
+
 
 (* Associe à variable de classe sa map *)
 let classVars: (string, (int*int) Smap.t) Hashtbl.t = Hashtbl.create 17
@@ -390,7 +391,7 @@ let compile_decl codefun codemain = function
     process vlist;
     nop, nop
   | DeclClass c -> (* On se contente juste d'ajouter la classe dans la table *)
-    let newClass = new classObject in
+    let newClass = new classObject classTable in
     newClass#build c;
     Hashtbl.add classTable c.className newClass;
     nop, nop
