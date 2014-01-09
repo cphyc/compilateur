@@ -376,10 +376,15 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
     | _ -> assert false
   )
   | ExprNew (s, l) -> assert false
-  (* TODO: Vérifier que ça ne change rien dans notre grammaire *)
-  | ExprRIncr e | ExprLIncr e -> compile_expr e lenv cenv
-    ++ comment " Incrémentation" ++ pop a0 ++ add a0 a0 oi 1 ++ push a0
-  | ExprRDecr e | ExprLDecr e -> compile_expr e lenv cenv
+  | ExprRIncr e | ExprLIncr e -> (* On compile l'expression, on ajoute un et on la stocke *)
+        compile_LVexpr lenv cenv e.exprCont
+    ++  pop a0                (* adresse de l'expression *)
+    ++  lw a1 areg (0, a0)
+    ++  add a1 a1 oi 1 
+    ++  sw a1 areg (0, a0)
+    ++  push a1
+  | ExprRDecr e 
+  | ExprLDecr e -> compile_expr e lenv cenv
     ++ comment " Décrémentation" ++ pop a0 ++ sub a0 a0 oi 1 ++ push a0
   | ExprAmpersand e -> assert false
   | ExprExclamation e ->
@@ -488,7 +493,7 @@ let rec compile_ins lenv cenv sp = function
       | ExprStrStr s ->
 	let lab = new_label () in
 	dataMap := Smap.add lab s !dataMap;
-	(* Il faut maintenant l'afficher *)
+
 	code ++	print_label lab, lenv
     in
     let inscode, nlenv = (List.fold_left aux (nop, lenv) l) in
