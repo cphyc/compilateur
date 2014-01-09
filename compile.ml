@@ -100,15 +100,10 @@ let rec sizeof = function
 | TypIdent s -> (Hashtbl.find classTable s)#size
 | TypPointer t -> sizeof t
 
-(* Parcourt l'arbre de syntaxe jusqu'à trouver l'identificateur d'une qvar *)
-let rec get_ident = function
-  | QvarQident q -> begin
-    match q with
-    | Ident s -> s
-    | IdentIdent (_,s) -> s (*On ne renvoie pas le nom de la classe, déjà présent *)
-  end
-  | QvarPointer qvar | QvarReference qvar -> get_ident qvar
-
+let  get_ident q = match q.qvarIdent with
+  | Ident s -> s
+  | IdentIdent (_,s) -> s (*On ne renvoie pas le nom de la classe, déjà présent *)
+ 
 (* () -> mips *)
 let save_fp_ra = 
        comment " sauvegarde de fp" 
@@ -169,11 +164,11 @@ let rec memberSize_list ml =
       Smap.add ident size map) Smap.empty (memList ml)
     
 
-let funQvar_to_ident = function
-  | QvarQident qident -> ( match qident with
-    | Ident s -> s
-    | _ -> assert false)
-  | _ -> assert false
+(* let funQvar_to_ident = function *)
+(*   | QvarQident qident -> ( match qident with *)
+(*     | Ident s -> s *)
+(*     | _ -> assert false) *)
+(*   | _ -> assert false *)
 
 (******************** Compilation ********************)
 let compile_LVexpr lenv = function
@@ -305,44 +300,6 @@ let rec compile_expr ex lenv = match ex.exprCont with
     end
   | ExprParenthesis e -> compile_expr e lenv
 
-(* (\* Différent du déclaration de variable, car ici, on ajoute dans la table de hashage *)
-(*    les informations pertinentes. *\) *)
-(* (\* prend un argument position pour savoir quelle est la position de la variable *)
-(*    par rapport au début *\) *)
-(* let rec alloc_declVar env first_free = function *)
-(*   | [] -> nop, Smap.empty *)
-(*   | var::varList ->  *)
-(*     let size = sizeof var.varTyp in *)
-(*     let code, lenv, new_first_free =  *)
-(*       if Smap.mem var.varIdent env (\* variable déjà stockée, grace à l'héritage *\) *)
-(*       then  *)
-(* 	nop, env, first_free *)
-(*       else  *)
-(* 	pushn size, Smap.add var.varIdent first_free env, first_free+size *)
-(*     in *)
-(*     let allocCode, allocEnv, nnew_fst_free = *)
-(*       alloc_declVar lenv new_first_free varList in *)
-(*     code ++ allocCode, allocEnv, nnew_fst_free *)
-
-(* (\* Renvoie le code d'initialisation ainsi que les membres de la classe (Smap) *\) *)
-(* let rec alloc_class first_free c =  *)
-(*   ( match c.supersOpt with  *)
-(*   | None ->( (\* on travaille sur c.memberList *\) *)
-(*     let rec process env first_free = function *)
-(*       | [] -> nop, Smap.empty *)
-(*       | (MemberDeclVars varList) :: reste -> *)
-(* 	let code, env, new_first_free = alloc_declVar env first_free varList in *)
-(* 	let resteCode, resteEnv = process env new_first_free varList in *)
-(* 	code ++ resteCode, resteEnv	 *)
-(*       | VirtualProto (b, p) -> assert false *)
-(*     in *)
-(*     let code, env = process c.memberList in *)
-(*     code, env *)
-(*   ) *)
-(*   | Some (c::cList) -> (\* on a des supers *\)assert false *)
-(*   ) *)
-
-
 (* sig : code -> lenv -> sp -> code, lenv
    Renvoie le code completé de celui de l'instruction.
    TODO : etre cohérent et avoir compile_ins qui ne prend pas code en argument.
@@ -353,9 +310,10 @@ let rec compile_ins lenv sp = function
       compile_expr e lenv, lenv
   | InsDef (v, op) ->
     let comm = comment (" allocation de la variable "^v.varIdent) in
+    let s = sizeof v.varTyp in
     let nlenv = allocate_var v lenv in
     let rhs = match op with
-      | None -> pushn (sizeof v.varTyp)
+      | None -> pushn s
       | Some InsDefExpr e -> compile_expr e nlenv
       | Some InsDefIdent (c, elist) -> (* Classe *)
 	(Hashtbl.find classTable c)#init

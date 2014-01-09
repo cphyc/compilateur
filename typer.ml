@@ -126,21 +126,25 @@ let rec typBF = function
   | TypPointer p -> typBF p
   | _ -> false
 
-(* Distingue méthode et fonction et renvoie la classe en option *)
-let rec classOfMethod q0 = match q0.Ast.qvarCont with
-  | Ast.QvarQident (Ast.Ident s) -> Some s, None
-  | Ast.QvarQident (Ast.IdentIdent (s1, s2)) -> Some s1, Some s2
-  | Ast.QvarPointer q -> classOfMethod q
-  | Ast.QvarReference q -> classOfMethod q
-    
 let rec qidentTyper = function
   | Ast.Ident s -> Ident s
   | Ast.IdentIdent (s1, s2) -> IdentIdent (s1, s2)
 
-let rec qvarTyper = function
-  | Ast.QvarQident qident -> QvarQident (qidentTyper qident)
-  | Ast.QvarPointer qvar -> QvarPointer (qvarTyper qvar.Ast.qvarCont)
-  | Ast.QvarReference qvar -> QvarReference (qvarTyper qvar.Ast.qvarCont)
+let rec qvarTyper typ v0 = match v0.Ast.qvarCont with
+  | Ast.QvarQident qident -> 
+    {qvarIdent = qidentTyper qident; qvarRef = false; 
+     qvarTyp = typConverter typ}
+  | Ast.QvarPointer qvar -> 
+    let nv = qvarTyper typ qvar in
+    {qvarIdent = nv.qvarIdent; qvarRef = false;
+     qvarTyp = TypPointer nv.qvarTyp}
+  | Ast.QvarReference qvar -> 
+    let nv = qvarTyper typ qvar in
+    if nv.qvarRef then
+      raise (Error("Double reference", v0.Ast.qvarLoc))
+    else
+      {qvarIdent = nv.qvarIdent; qvarRef = true;
+       qvarTyp = nv.qvarTyp}
 
 let rec prevent_redeclaration env var = match var.Ast.varCont with
   | Ast.VarIdent s -> 
@@ -152,13 +156,13 @@ let rec prevent_redeclaration env var = match var.Ast.varCont with
   
 let protoVarTTyper = function 
   | Ast.Qvar (typ, qvar) -> (* Fonction *)
-    Function (typConverter typ.Ast.typCont, qvarTyper qvar.Ast.qvarCont)
+    Function (qvarTyper typ.Ast.typCont qvar)
   | Ast.Tident s -> Cons s (* Constructeur *)
   | Ast.TidentTident (s,s') when s == s' -> Cons s (* Constructeur *)
   | Ast.TidentTident (s1, s2) -> Method (s1, s2) (* Méthode *)
 
 let rec varTyper typ v0 = match v0.Ast.varCont with
-  | Ast.VarIdent s -> { varIdent=s; varRef=false; varTyp=typConverter  typ}
+  | Ast.VarIdent s -> { varIdent=s; varRef=false; varTyp=typConverter typ}
   | Ast.VarPointer v -> 
     let nv = varTyper typ v in
     { varIdent=nv.varIdent; varRef=false; 
@@ -211,18 +215,16 @@ let memberConverter s0 = function
     let lt = List.map (fun a -> a.varTyp) argList in
     begin match p.Ast.protoVar with
     | Ast.Qvar (t, q) -> 
-      let s = match classOfMethod q with
-	| Some s, None -> s	  
-	| Some s1, Some s2 -> if s1 == s0 then s2 else assert false 
-	| _ -> assert false
+      let q' = qvarTyper t.Ast.typCont q in
+      let s = match q'.qvarIdent with
+	| Ident s -> s	  
+	| IdentIdent (s1, s2) -> if s1 == s0 then s2 else assert false 
       in
       let l = Hashtbl.find_all methodsTable (s0,s) in
       if List.exists (eqProf lt) (snd (List.split l))
       then raise (Error ("ce profil a déjà été déclaré", p.Ast.protoLoc));
-      let t' = typConverter t.Ast.typCont 
-      and q' = qvarTyper q.Ast.qvarCont in
-      Hashtbl.add methodsTable (s0,s) (((s0,b),t'), lt);
-      VirtualProto (b, {protoVar = Function (t',q'); argumentList = argList;})
+      Hashtbl.add methodsTable (s0,s) (((s0,b), q'.qvarTyp), lt);
+      VirtualProto (b, {protoVar = Function q'; argumentList = argList;})
 
     | Ast.Tident s -> 
       if s != s0 then assert false;
@@ -279,14 +281,12 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
       { exprTyp = el.exprTyp; exprCont= ExprEqual (el, er) }
 
   | Ast.ExprApply (e, el) -> 
-    let typ, ne, nel =  match e.Ast.exprCont with
+    begin
+      match e.Ast.exprCont with
       (* On distingue les fonctions des constructeurs, etc ... *)
-      | Ast.ExprQident (Ast.Ident s) (*function*) ->
-	let typ, protoTypList = try Hashtbl.find functionsTable s 
-	  with Not_found -> 
-	    raise (Error ("Identificateur de fonction non déclaré.",
-			  exp.Ast.exprLoc))
-	in
+      | Ast.ExprQident (Ast.Ident s) when Hashtbl.mem functionsTable s -> 
+	(* function *)
+	let typ, protoTypList =  Hashtbl.find functionsTable s in
 	let argList = List.map (fun expr -> exprTyper lenv expr) el in
 	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
 	
@@ -299,8 +299,35 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	  Error 
 	    ("Types des paramètres incompatibles avec le type de la fonction",
 	     exp.Ast.exprLoc));
-      (* Les types sont compatibles, on renvoie le tout *)
-	typ, {exprTyp = typ; exprCont = ExprQident (Ident s)}, argList
+	(* Les types sont compatibles, on renvoie le tout *)
+	{exprTyp = typ; exprCont = 
+	    ExprApply ({exprTyp = typ; exprCont = ExprQident (Ident s)}, 
+		       argList)}
+
+      | Ast.ExprQident (Ast.Ident s) -> 
+	if not (Smap.mem "this" lenv)
+	then raise (Error ("Identificateur de fonction non déclaré.",
+			   exp.Ast.exprLoc)); 
+        let className = match Smap.find "this" lenv with 
+	  | TypPointer (TypIdent s) -> s 
+	  | _ -> assert false in
+	let surclassList = Hashtbl.find_all classInheritances className in
+	let argList = List.map (exprTyper lenv) el in
+	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
+	let profList = List.concat 
+	  (List.map (fun c -> Hashtbl.find_all methodsTable (c,s))
+	  (className::surclassList)) in
+	begin
+	  match minProf2 (geqListProf2 argTypList profList) with
+	  | [] -> raise (Error("Aucun profil ne correspond", exp.Ast.exprLoc))
+	  | [((c,v),t),p] -> 
+	    {exprTyp = t ; 
+	     exprCont = ExprApply ({exprTyp = t; 
+				    exprCont = ExprQident (Ident s)}, 
+				   argList)}
+	  | _ -> raise (Error("Trop de profils",exp.Ast.exprLoc))
+	end
+		  
       | Ast.ExprQident (Ast.IdentIdent (s1,s2)) -> assert false
       | Ast.ExprDot (e', s) -> 
 	let ne' = exprTyper lenv e' in
@@ -318,23 +345,24 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	begin
 	  match minProf2 (geqListProf2 argTypList profList) with
 	  | [] -> raise (Error("Aucun profil ne correspond",e'.Ast.exprLoc))
-	  | [((c,v),t),p] -> t, {exprTyp = t; exprCont = ExprDot (ne', s)}, 
-	    argList
+	  | [((c,v),t),p] -> 
+	    {exprTyp = t ; 
+	     exprCont = ExprApply ({exprTyp = t; exprCont = ExprDot (ne', s)}, 
+	    argList)}
 	  | _ -> raise (Error("Trop de profils",e'.Ast.exprLoc))
 	end
  	
       | _ -> raise 
 	(Error("Cette expression ne peut etre utilisée comme une fonction",
 	       e.Ast.exprLoc)) 
-    in
-    {exprTyp = typ; exprCont = ExprApply (ne, nel)}
+    end
   | Ast.ExprNew (s, el) -> 
     let nel = List.map (exprTyper lenv) el in
     let lprof = Hashtbl.find_all classCons s in
     let p = List.map (fun e -> e.exprTyp) nel in
     begin
       match minProf (geqListProf p lprof) with
-      | [] -> raise (Error ("no profile corresponds2", exp.Ast.exprLoc))
+      | [] -> raise (Error ("no profile corresponds", exp.Ast.exprLoc))
       | [p] -> { exprTyp = TypPointer (TypIdent s);  
 		 exprCont = ExprNew (s, nel)}
       | _ -> raise (Error ("several profiles correspond", exp.Ast.exprLoc))
@@ -477,7 +505,23 @@ let rec insTyper lenv ins = match ins.Ast.insCont with
 	  InsDef (tvar, Some (InsDefExpr te))
 	  else raise (Error ("Type mal forme", ins.Ast.insLoc))
 	else raise (Error ("Types incompatibles.", ins.Ast.insLoc))
-      | Some Ast.InsDefIdent (s, elist) -> assert false
+      | Some Ast.InsDefIdent (s, elist) -> 
+	let s0 = match tvar.varTyp with
+	  | TypIdent s -> s
+	  | _ -> raise (Error ("pas une classe", ins.Ast.insLoc))
+	in
+	if s != s0 then raise (Error ("pas la meme classe", ins.Ast.insLoc));
+	let nel = List.map (exprTyper lenv) elist in
+	let lprof = Hashtbl.find_all classCons s in
+	let p = List.map (fun e -> e.exprTyp) nel in
+	begin
+	  match minProf (geqListProf p lprof) with
+	  | [] -> raise (Error ("no profile corresponds", ins.Ast.insLoc))
+	  | [p] -> (Smap.add tvar.varIdent tvar.varTyp lenv),
+	    InsDef (tvar, Some (InsDefIdent (s, nel)))
+	  | _ -> raise (Error ("several profiles correspond", 
+			       ins.Ast.insLoc))
+	end
       | None -> ( Smap.add tvar.varIdent tvar.varTyp lenv), InsDef (tvar, None) 
     end
   | Ast.InsIf (e, i) -> 
@@ -586,37 +630,37 @@ let declTyper = function
     match p.Ast.protoVar with
     | Ast.Qvar (t,q) -> begin
       (* On distingue les methodes, les classes et les fonctions *)
-      let t = typConverter t.Ast.typCont in
-      match classOfMethod q with
-      | Some s, None -> (* Fonctions *)
+      let q' = qvarTyper t.Ast.typCont q in
+      let t' = q'.qvarTyp in
+      match q'.qvarIdent with
+      | Ident s -> (* Fonctions *)
 	if Hashtbl.mem functionsTable s 
 	then raise (Error ("Fonction déjà définie",p.Ast.protoLoc));
 	if Hashtbl.mem  genv s
 	then raise (Error ("Nom déjà utilisé",p.Ast.protoLoc)); 
 	(* On ajoute la fonction à la liste des fonctions *)
-	Hashtbl.add functionsTable s (t, typList);
+	Hashtbl.add functionsTable s (t', typList);
 	
-	if typNum t || (typEq t TypVoid) then
+	if typNum t' || (typEq t' TypVoid) then
 	  ProtoBloc	
 	    ( 
 	      { protoVar = var;
 		argumentList = argList },
-		insListTyper (Smap.add "return" t env) b.Ast.blocCont;
+		insListTyper (Smap.add "return" t' env) b.Ast.blocCont;
 	    )
 	else raise (Error ("la valeur de retour doit être numérique", 
 			   p.Ast.protoLoc))
-      | Some s1, Some s2 -> (* Méthode s2 de s1 *)
-	if typNum t || (typEq t TypVoid) then
+      | IdentIdent (s1, s2) -> (* Méthode s2 de s1 *)
+	if typNum t' || (typEq t' TypVoid) then
 	  ProtoBloc 
 	    ( 
 	      { protoVar = var;
 		argumentList = argList},	   
 	      insListTyper (Smap.add "this" (TypPointer (TypIdent s1))
-			      (Smap.add "return" t env)) b.Ast.blocCont;
+			      (Smap.add "return" t' env)) b.Ast.blocCont;
 	    )
 	else raise (Error ("la valeur de retour doit être numérique",
 			   p.Ast.protoLoc))
-      | None, _ -> assert false
     end
     | Ast.Tident s -> (* Constructeur de s *)
       ProtoBloc 
