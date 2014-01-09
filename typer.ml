@@ -219,7 +219,8 @@ let memberConverter s0 = function
       let q' = qvarTyper t.Ast.typCont q in
       let s = match q'.qvarIdent with
 	| Ident s -> s	  
-	| IdentIdent (s1, s2) -> if s1 == s0 then s2 else assert false 
+	| IdentIdent (s1, s2) -> if s1 == s0 then s2 else 
+	    raise (Error ("pas la même classe", p.Ast.protoLoc))
       in
       let l = Hashtbl.find_all methodsTable (s0,s) in
       if List.exists (eqProf lt) (snd (List.split l))
@@ -228,7 +229,7 @@ let memberConverter s0 = function
       VirtualProto (b, {protoVar = Function q'; argumentList = argList;})
 
     | Ast.Tident s -> 
-      if s != s0 then assert false;
+      if s != s0 then raise (Error ("pas la même classe", p.Ast.protoLoc));
       let _, argList, _ = argumentTyper Smap.empty p.Ast.argumentList in
       let lt = List.map (fun a -> a.varTyp) argList in
       let l = Hashtbl.find_all classCons s in
@@ -239,7 +240,8 @@ let memberConverter s0 = function
       
 
     | Ast.TidentTident (s1, s2) -> 
-      if (s1 != s2) || (s0 != s1) then assert false;
+      if (s1 != s2) || (s0 != s1) 
+      then raise (Error ("pas la même classe", p.Ast.protoLoc));
       let _, argList, _ = argumentTyper Smap.empty p.Ast.argumentList in
       let lt = List.map (fun a -> a.varTyp) argList in
       let l = Hashtbl.find_all classCons s1 in
