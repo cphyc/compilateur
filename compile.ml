@@ -410,7 +410,7 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
   | ExprLDecr e -> (* On compile l'expression, on ajoute un et on la stocke *)
         compile_LVexpr lenv cenv e.exprCont
     ++  comment " adresse de l'expression"
-    ++  pop a0                (* adresse de l'expression *)
+    ++  pop a0
     ++  comment " on récupère la valeur"
     ++  lw a1 areg (0, a0)
     ++  comment " on incrémente"
@@ -481,13 +481,19 @@ let rec compile_ins lenv cenv sp = function
   | InsIf (e,i) -> (* astuce de faineant *)
     compile_ins lenv cenv sp (InsIfElse(e,i,InsSemicolon))
   | InsIfElse (e,i1,i2) -> 
-    let if_true, if_false, way_out = new_label (), new_label (), new_label () in
+    let if_true, way_out = new_label (), new_label () in
     let ins1, _ = compile_ins lenv cenv sp i1 in
     let ins2, _ = compile_ins lenv cenv sp i2 in
-    compile_expr e lenv cenv ++ pop a0 ++ bnez a0 if_true 
-    ++ comment " si vrai :" ++ label if_true ++ ins1 ++ b way_out
-    ++ comment " si faux :" ++ label if_false ++ ins2
-    ++ label way_out, lenv
+        compile_expr e lenv cenv 
+    ++  pop a0 
+    ++  bnez a0 if_true 
+    ++  comment " si faux :" 
+    ++  ins2
+    ++  b way_out
+    ++  comment " si vrai :" 
+    ++  label if_true 
+    ++  ins1 
+    ++  label way_out, lenv
   | InsWhile (e,i) -> 
     let way_in, way_out = new_label(), new_label() in
     let ins1, _ = compile_ins lenv cenv sp i in
