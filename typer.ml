@@ -9,6 +9,7 @@ let genv: (typ Smap.t) ref = ref Smap.empty
 let classInheritances: (string, string) Hashtbl.t = Hashtbl.create 17
 let classFields: (string, string * typ) Hashtbl.t = Hashtbl.create 17
 let classCons: (string, typ list) Hashtbl.t = Hashtbl.create 17
+let classMethods: (string, string) Hashtbl.t = Hashtbl.create 17
 
 (*  (class, method), ((class, virtual), (return type, ref)), profile *)
 let methodsTable: (string*string, ((string*bool) * (typ*bool)) * typ list) 
