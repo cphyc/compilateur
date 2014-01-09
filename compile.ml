@@ -22,17 +22,17 @@ class methodObject l r t s v = object (self)
   val mutable lab:string option = l
   val is_ref:bool = r 
   val typ : typ = t
-  val signature : typ list = s
+  val profile : typ list = s
   val virt : bool = v
-  method get_sign = signature
-  method get_lab : text = match lab with None -> assert false | Some s -> label s
+  method get_profile = profile
+  method get_lab : string = match lab with None -> assert false | Some s -> s
   method set_lab s = lab <- Some s
 end
 
 class consObject l t s = object
   val mutable lab:string option = l
   val typ:typ = t
-  val signature:typ list = s
+  val profile:typ list = s
   method set_lab s = lab <- Some s
   method get_lab : text = match lab with None -> assert false | Some s -> label s 
 end
@@ -54,10 +54,26 @@ class classObject classTable = object (self)
     let mList = try Smap.find str methods with Not_found -> [] in
     let list = m :: mList in
     methods <- Smap.add str list methods
-  method add_method_label str sign lab =
+  method add_method_label str profile lab =
     let mlist = Smap.find str methods in
-    let obj = List.find (fun meth -> meth#get_sign == sign) mlist in
+    let obj = List.find (fun meth -> meth#get_profile == profile) mlist in
     obj#set_lab lab;
+  method get_method str profile = (* On commence par chercher dans la classe, sinon
+				     on explore les supers *)
+    (* On récupère la liste des méthodes dont le nom est str *)
+    try let metList = Smap.find str methods in
+	(* Dans cette liste, y a t-il une methode qui a le bon profil ?*)
+	Some (List.find (fun met -> met#get_profile == profile) metList)
+    with Not_found -> 
+      (* On explore tous les supers jusqu'à trouver la bonne *)
+      try let dadysClass = 
+	    (List.find (fun classObj -> 
+	      match classObj#get_method str profile with
+	      | None -> false 
+	      | Some met -> true) parents) 
+	  in
+	  dadysClass#get_method str profile
+      with Not_found -> None
   method add_cons str consObj = cons <- consObj :: cons
   method build c =
     let rec sizeof = function
@@ -85,8 +101,8 @@ class classObject classTable = object (self)
 	    Smap.add var.varIdent (sizeof var.varTyp) env)
 	    (memberListRunner env mlist) dv
 	| VirtualProto (virt, proto) -> 
-	  (* On calcule sa signature *)
-	  let signature = 
+	  (* On calcule sa profile *)
+	  let profile = 
 	    List.map (fun arg -> arg.varTyp) proto.argumentList in
 	  (* On ajoute soit un constructeur, soit une méthode *)
 	  ( match proto.protoVar with
@@ -97,17 +113,17 @@ class classObject classTable = object (self)
 	      match qvar.qvarIdent with
 		(* Constructeurs *)
 	      | Ident s when s == declClass.className -> (* Contructeur *)
-		self#add_cons s (new consObject None typ signature);
+		self#add_cons s (new consObject None typ profile);
 	      | IdentIdent (s1, s2) when s2 == declClass.className ->
 		assert (s1 == declClass.className);
-		self#add_cons s1 (new consObject None typ signature);
+		self#add_cons s1 (new consObject None typ profile);
                 (* Méthodes *)
 	      | Ident s ->  
 		self#add_method s 
-		  (new methodObject None is_ref typ signature virt)
+		  (new methodObject None is_ref typ profile virt)
 	      | IdentIdent (s1, s2) -> assert (s1 == declClass.className);
 		self#add_method s2 
-		  (new methodObject None is_ref typ signature virt)
+		  (new methodObject None is_ref typ profile virt)
 	    )
 	  | _ -> assert false
 	  );
@@ -235,7 +251,7 @@ let rec compile_LVexpr lenv cenv = function
 	    ++ li a0 pos 
 	    ++ add a0 a0 oreg fp 
 	    ++ push a0
-	else if Smap.mem s cenv then (* Variable de class *)
+	else if Smap.mem s cenv then (* Variable de classe *)
 	  let offset = Smap.find s cenv in 
 	  let this = Smap.find "this" lenv in
 	      comment (" variable de classe "^s)
@@ -308,7 +324,6 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
       ++  add a0 a0 oi offset (* on a dans a0 l'adresse de la variable *)
       ++  lw a0 areg (0, a0)  (* on charge la variable dans a0 *)
       ++  push a0
-    | TypPointer (TypIdent c) -> assert false
     | _ -> assert false
   )
   | ExprEqual (e1,e2) -> (* On compile l'expression e1, c'est une lvalue donc 
@@ -326,12 +341,13 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
 	  (Hashtbl.find_all functionsTable s) in
       let codeArgs = 
 	(* On fold à droite pour avoir dans le bon sens *)
-	List.fold_right (fun expr code -> code ++ compile_expr expr lenv cenv) l nop in
+	List.fold_right (fun expr code -> code ++ compile_expr expr lenv cenv) l nop
+      in
           comment (" appel de la fonction "^s)
-      ++  comment " construction de la pile"
+      ++  comment "  construction de la pile"
       ++  codeArgs
       ++  jal funlab
-      ++  comment " on met le résultat sur la pile"
+      ++  comment "  on met le résultat sur la pile"
       ++  push v0
     | ExprQident (IdentIdent (s1,s2)) when s1==s2 -> assert false(* appel de cons *)
     | ExprQident (IdentIdent (s1,s2)) -> assert false (* appel de méthode *)
@@ -340,9 +356,23 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
       (* On compile l'adresse de e *)
       let get_e_address = compile_LVexpr lenv cenv e.exprCont ++ pop a0 in
       (* On trouve la classe grace au type *)
-      let typ = e.exprTyp in
-      (* On cherche s : variable ou méthode ? *)
-      assert false
+      let className = match e.exprTyp with | TypIdent s -> s | _ -> assert false in
+      (* On a la classe, on cherche alors le code de la méthode *)
+      let classObj = Hashtbl.find classTable className in
+      let metObject = match classObj#get_method s p with 
+	| None -> assert false | Some m -> m in
+      let offs_var_map = classObj#offs_var_map  in
+      let metLab = metObject#get_lab in
+      (* On compile la pile d'argument *)
+      let codeArgs = 
+	List.fold_right (fun expr code -> code ++ compile_expr expr lenv cenv) l nop
+      in
+          comment (" appel de la méthode "^s^" de "^className)
+      ++  comment "  construction de la pile"
+      ++  codeArgs
+      ++  jal metLab
+      ++  comment "  on met le résultat sur la pile"
+      ++  push v0
     | _ -> assert false
   )
   | ExprNew (s, l) -> assert false
@@ -545,11 +575,11 @@ let compile_decl codefun codemain = function
 	  | Some cla, Some met -> (* Méthode *)
 	    (* On lui créée un label, qu'on indique à sa classe *)
 	    let metLabel = new_label() in
-	    (* On récupère sa signature *)
-	    let signature = List.map (fun arg -> arg.varTyp) argList in
+	    (* On récupère sa profile *)
+	    let profile = List.map (fun arg -> arg.varTyp) argList in
 	    let classObj = Hashtbl.find classTable cla in
 	    (* On ajoute dans la classe le label de la méthode *)
-	    classObj#add_method_label met signature metLabel;
+	    classObj#add_method_label met profile metLabel;
 	    (* On produit alors le code *)
 	    (* On créée l'environnement liée à la classe.
 	       nb : on a this dans les arguments ! *)
