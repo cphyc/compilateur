@@ -198,6 +198,8 @@ let memberConverter s0 = function
     let la = (List.map (varTyper dv.Ast.declVarsTyp.Ast.typCont) 
 		dv.Ast.varList) in
     let aux var = 
+      if typEq var.varTyp (TypIdent s0)
+      then raise (Error ("Constructeur incomplet", dv.Ast.declVarsLoc));
       if not (typBF var.varTyp) 
       then raise (Error ("mal formé", dv.Ast.declVarsLoc));
       if var.varRef
@@ -621,7 +623,7 @@ let expr_strTyper env = function
 
 (* =========================TYPAGE DES INSTRUCTIONS========================== *)
 
-let rec insTyper lenv ins = match ins.Ast.insCont with
+let rec insTyper lenv return ins = match ins.Ast.insCont with
   | Ast.InsSemicolon -> (lenv, InsSemicolon)
   | Ast.InsExpr e -> (lenv, InsExpr (exprTyper lenv e))
   | Ast.InsDef (typ, var, insDef) ->
@@ -632,14 +634,20 @@ let rec insTyper lenv ins = match ins.Ast.insCont with
       let tvar = varTyper typ.Ast.typCont var in
       match insDef with
       | Some Ast.InsDefExpr e -> 
-	let te = exprTyper lenv e in
-	if typIn te.exprTyp tvar.varTyp then
-	  if typBF tvar.varTyp then
-	  (Smap.add tvar.varIdent tvar.varTyp lenv),
+	let te = 
+	  if tvar.varRef 
+	  then exprLVTyper lenv e
+	  else exprTyper lenv e in
+	if not (typIn te.exprTyp tvar.varTyp) then
+	  raise (Error ("Types incompatibles.", ins.Ast.insLoc));
+	if not (typBF tvar.varTyp) then
+	  raise (Error ("Type mal forme", ins.Ast.insLoc));
+	(Smap.add tvar.varIdent tvar.varTyp lenv),
 	  InsDef (tvar, Some (InsDefExpr te))
-	  else raise (Error ("Type mal forme", ins.Ast.insLoc))
-	else raise (Error ("Types incompatibles.", ins.Ast.insLoc))
       | Some Ast.InsDefIdent (s, elist) -> 
+	if tvar.varRef
+	then raise (Error ("une classe n'est pas une valeur gauche", 
+			   ins.Ast.insLoc));
 	let s0 = match tvar.varTyp with
 	  | TypIdent s -> s
 	  | _ -> raise (Error ("pas une classe", ins.Ast.insLoc))
@@ -661,21 +669,21 @@ let rec insTyper lenv ins = match ins.Ast.insCont with
 	( Smap.add tvar.varIdent tvar.varTyp lenv), InsDef (tvar, None) 
     end
   | Ast.InsIf (e, i) -> 
-    let _, ni = insTyper lenv i in
+    let _, ni = insTyper lenv return i in
     let ne = exprTyper lenv e in
     if not (typEq ne.exprTyp TypInt) then 
       raise (Error ("Pas un type int comme condition", ins.Ast.insLoc));
     lenv, InsIf (ne, ni)
   | Ast.InsIfElse (e, i1, i2) -> 
-    let _, ins1 = insTyper lenv i1 in
-    let _, ins2 = insTyper lenv i2 in
+    let _, ins1 = insTyper lenv return i1 in
+    let _, ins2 = insTyper lenv return i2 in
     let ne = exprTyper lenv e in
     if not (typEq ne.exprTyp TypInt) then 
       raise (Error ("Pas un type int comme condition", ins.Ast.insLoc));
     lenv,
     InsIfElse (exprTyper lenv e, ins1, ins2)
   | Ast.InsWhile (e, i) -> 
-    let _, ni = insTyper lenv i in
+    let _, ni = insTyper lenv return i in
     let ne = exprTyper lenv e in
     if not (typEq ne.exprTyp TypInt) then 
       raise (Error ("Pas un type int comme condition", ins.Ast.insLoc));
@@ -683,7 +691,7 @@ let rec insTyper lenv ins = match ins.Ast.insCont with
   | Ast.InsFor (el1, eopt, el2, i) -> 
     let nel1 = List.map (exprTyper lenv) el1 in
     let nel2 = List.map (exprTyper lenv) el2 in
-    let _, ni = insTyper lenv i in
+    let _, ni = insTyper lenv return i in
     let neopt = match eopt with 
       |None -> {exprTyp = TypInt; exprCont = ExprInt 1 (* = True *)}
       |Some e -> let ne = exprTyper lenv e in
@@ -694,14 +702,22 @@ let rec insTyper lenv ins = match ins.Ast.insCont with
     in
     lenv, InsFor (nel1, neopt, nel2, ni)
   | Ast.InsBloc b -> 
-    let insList = insListTyper lenv b.Ast.blocCont in
+    let insList = insListTyper lenv return b.Ast.blocCont in
     (lenv, InsBloc insList)
   | Ast.InsCout s -> 
     (lenv, InsCout (List.map (expr_strTyper lenv) s))
-  | Ast.InsReturn None -> (lenv, InsReturn None)
+  | Ast.InsReturn None -> lenv, InsReturn None
   | Ast.InsReturn (Some e) -> 
-    let ne = exprTyper lenv e in
-    if typEq (Smap.find "return" lenv) ne.exprTyp then
+    let ne, rtyp = 
+      match return with
+      | None -> 
+	raise (Error ("pas de return dans les constructeurs", ins.Ast.insLoc))
+      | Some (r,rtyp) -> 
+	if r
+	then (exprLVTyper lenv e), rtyp
+	else (exprTyper lenv e), rtyp
+    in
+    if typIn ne.exprTyp rtyp then
       (lenv, InsReturn (Some ne))
     else raise (Error ("wrong return type", ins.Ast.insLoc))
 
@@ -709,12 +725,12 @@ let rec insTyper lenv ins = match ins.Ast.insCont with
    La fonction type au fur et à mesure les instructions en mettant à jour 
    l'environnement.
    sig : env -> Ast.ins list -> Tast.ins *)
-and insListTyper lenv = function
+and insListTyper lenv r = function
   | [] -> []
   | ins::insl -> 
     (* Sous fonction qui récupère le nouvel lenv et l'instruction typée *)
-    let nlenv, tIns = insTyper lenv ins in
-    tIns::(insListTyper nlenv insl)
+    let nlenv, tIns = insTyper lenv r ins in
+    tIns::(insListTyper nlenv r insl)
 
 
 
@@ -784,7 +800,7 @@ let declTyper = function
 	    ( 
 	      { protoVar = var;
 		argumentList = argList },
-		insListTyper (Smap.add "return" t' env) b.Ast.blocCont;
+		insListTyper env (Some (q'.qvarRef, t')) b.Ast.blocCont;
 	    )
 	else raise (Error ("la valeur de retour doit être numérique", 
 			   p.Ast.protoLoc))
@@ -794,8 +810,8 @@ let declTyper = function
 	    ( 
 	      { protoVar = var;
 		argumentList = argList},	   
-	      insListTyper (Smap.add "this" (TypPointer (TypIdent s1))
-			      (Smap.add "return" t' env)) b.Ast.blocCont;
+	      insListTyper (Smap.add "this" (TypPointer (TypIdent s1)) env) 
+		(Some (q'.qvarRef, t')) b.Ast.blocCont;
 	    )
 	else raise (Error ("la valeur de retour doit être numérique",
 			   p.Ast.protoLoc))
@@ -806,7 +822,7 @@ let declTyper = function
 	  { protoVar = var ;
 	    argumentList = argList},
 	  insListTyper (Smap.add "this" (TypPointer (TypIdent s)) env) 
-	    b.Ast.blocCont;
+	    None b.Ast.blocCont;
 	)
     | Ast.TidentTident (s1, s2) -> (* Constructeur *)
       if s1==s2 then
@@ -815,7 +831,7 @@ let declTyper = function
 	  { protoVar = var ;
 	    argumentList = argList },
 	  insListTyper (Smap.add "this" (TypPointer (TypIdent s2)) env) 
-	    b.Ast.blocCont;
+	    None b.Ast.blocCont;
 	)
       else raise (Error (s2^" n'est pas un constructeur", p.Ast.protoLoc))
 
