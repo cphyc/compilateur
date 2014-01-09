@@ -725,12 +725,15 @@ let declTyper = function
     let atyp = dv.Ast.declVarsTyp.Ast.typCont in
     let vlist = dv.Ast.varList in
     DeclVars 
-      ( List.map (fun var -> let nv = varTyper atyp var in
-			     	if Hashtbl.mem functionsTable nv.varIdent 
+      ( List.map (fun var -> 
+	let nv = varTyper atyp var in
+	if not (typBF nv.varTyp) then
+	  raise (Error ("type mal formé", dv.Ast.declVarsLoc));
+	if Hashtbl.mem functionsTable nv.varIdent 
 	then raise (Error ("Variable déjà utilisée",dv.Ast.declVarsLoc));
-			    genv := Smap.add nv.varIdent nv.varTyp !genv;
-			    nv) vlist)   
-    
+	genv := Smap.add nv.varIdent nv.varTyp !genv;
+	nv) vlist)   
+      
   | Ast.DeclClass c -> 
     let l = match c.Ast.supersOpt with
       | None -> [""]
