@@ -76,7 +76,9 @@ rule token = parse
   | "::" { DCOLON }
   | ";" { SEMICOLON }
   | "/*" { comment lexbuf }
-  | "//" { commentbis lexbuf }
+  | "//" { commentbis lexbuf }  
+  | '0' octal_digit+ as octal { CST (int_of_string ("0o"^octal)) }
+  | "0x" hexa_digit+ as hexa { CST (int_of_string ("0x"^hexa)) }
   | integer as s { CST (int_of_string s) }
   | eof { EOF }
   | _ as c { raise (Lexing_error ("illegal character: " ^ String.make 1 c)) }
