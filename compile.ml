@@ -16,6 +16,18 @@ let (genv : (string, string * int) Hashtbl.t) = Hashtbl.create 17
    de ses args *)
 let functionsTable: (string, int * string * typ list) Hashtbl.t = Hashtbl.create 17
 
+let print_profile profile = List.iter (fun t -> match t with
+  | TypNull -> printf "\t TypeNull@."
+  | TypVoid -> printf "\t TypeVoid@."
+  | TypInt -> printf "\t TypeInt@."
+  | TypIdent s -> print_string ("\t Classe"^s);printf "@.";
+  | TypPointer _ -> ()) profile
+
+let eq_profile p1 p2 = 
+  try
+    List.for_all2 (fun t1 t2 -> t1 == t2) p1 p2
+  with Invalid_argument _ -> false
+
 (* "pushn size" empile "size" octets sur la pile *)
 let pushn = sub sp sp oi
 class methodObject l r t s v = object (self)
@@ -25,6 +37,8 @@ class methodObject l r t s v = object (self)
   val profile : typ list = s
   val virt : bool = v
   method get_profile = profile
+  method print_profile = print_profile profile
+
   method get_lab : string = match lab with None -> assert false | Some s -> s
   method set_lab label_creator = match lab with 
   | None -> let newLab = label_creator () in lab <- Some newLab; newLab
@@ -47,25 +61,37 @@ class classObject classTable = object (self)
   val mutable size = 0
   val mutable methods : methodObject list Smap.t = Smap.empty
   val mutable cons : consObject list = []
+  method print_methods = 
+    Smap.iter (fun str objList -> print_string (str^" associé à :"); printf "@.";
+      List.iter (fun obj -> printf "et@.";obj#print_profile) objList) methods
   method init = initCode
   method offs_var_map = Smap.map (fun (a,_) -> a) map
   method size = size
   method decl = declClass
   method offset s = fst (Smap.find s map)
   method add_method str m =
-    let mList = try Smap.find str methods with Not_found -> [] in
+    (* On veut ajouter une méthode : on récupère la liste des méthodes de memes nom *)
+    let mList = try Smap.find str methods with 
+	Not_found -> [] in
+    (* On lui ajoute la méthode m *)
     let list = m :: mList in
+    (* On sauvegarde dans methods *)
     methods <- Smap.add str list methods
   method add_method_label str profile label_creator =
-    (* On récupère la méthode associée, si ce n'est pas déjà fait, on lui assigne un label qu'on récup. *)
+    (* On récupère la méthode associée *)
+    printf "Recherche du profil :\t";print_string (str);print_profile profile;printf "@.";
     let met = match self#get_method str profile with None -> assert false | Some m -> m in
+    (* On lui demande créer un nouveau label *)
     met#set_lab label_creator;
   method get_method str profile = (* On commence par chercher dans la classe, sinon
 				     on explore les supers *)
     (* On récupère la liste des méthodes dont le nom est str *)
     try let metList = Smap.find str methods in
 	(* Dans cette liste, y a t-il une methode qui a le bon profil ?*)
-	Some (List.find (fun met -> met#get_profile == profile) metList)
+	Some (List.find (fun met ->
+	  printf "element : @.";met#print_profile; 
+	  if eq_profile met#get_profile profile then (printf "Match !@."; true)
+	  else (printf "Fail@."; false)) metList)
     with Not_found -> 
       (* On explore tous les supers jusqu'à trouver la bonne *)
       try let dadysClass = 
@@ -110,26 +136,29 @@ class classObject classTable = object (self)
 	  in
 	  (* On ajoute soit un constructeur, soit une méthode *)
 	  let _ =  match proto.protoVar with
-	    | Function qvar -> (* Achtung si is_ref est vrai *)
-	      let is_ref = qvar.qvarRef in
-	      let typ = qvar.qvarTyp in
-	      (
-		match qvar.qvarIdent with
-	      (* Constructeurs *)
-		| Ident s when s == declClass.className -> (* Contructeur *)
-		  self#add_cons s (new consObject None typ profile);
-		| IdentIdent (s1, s2) when s2 == declClass.className ->
-		  assert (s1 == declClass.className);
-		  self#add_cons s1 (new consObject None typ profile);
-              (* Méthodes *)
-		| Ident s -> 
-		  self#add_method s 
-		    (new methodObject None is_ref typ profile virt)
-		| IdentIdent (s1, s2) -> assert (s1 == declClass.className);
-		  self#add_method s2 
-		    (new methodObject None is_ref typ profile virt)
-	      )
-	    | _ -> assert false
+	  | Function qvar -> (* Achtung si is_ref est vrai *)
+	    let is_ref = qvar.qvarRef in
+	    let typ = qvar.qvarTyp in
+	    (
+	      match qvar.qvarIdent with
+		(* Constructeurs *)
+	      | Ident s when s == declClass.className -> 
+		(* On a un constructeur, on l'ajoute à la liste *)
+		self#add_cons s (new consObject None typ profile);
+	      | IdentIdent (s1, s2) when s2 == declClass.className ->
+		(* On a un constructeur, on l'ajoute à la liste *)
+		assert (s1 == declClass.className);
+		self#add_cons s1 (new consObject None typ profile);
+
+                (* Méthodes *)
+	      | Ident s -> 
+		self#add_method s 
+		  (new methodObject None is_ref typ profile virt)
+	      | IdentIdent (s1, s2) -> assert (s1 == declClass.className);
+		self#add_method s2 
+		  (new methodObject None is_ref typ profile virt)
+	    )
+	  | _ -> assert false
 	  in
 	  (* On continue à traiter mlist *)
 	  memberListRunner env mlist
@@ -151,6 +180,7 @@ class classObject classTable = object (self)
     map <- offsEnv;
     declClass <- c;
     size <- first_free;
+    self#print_methods;
 end
 (* Une classe : une déclaration, une map des tailles*positions, un code 
    d'initialisation, une taille *)
@@ -599,8 +629,6 @@ let compile_decl codefun codemain = function
 	    (* On créée l'environnement liée à la classe.
 	       nb : on a this dans les arguments ! *)
 	    let classEnv = classObj#offs_var_map in
-	    Smap.iter (fun x pos -> print_string (x^" en position "); Format.print_int pos; printf "@.")
-	      classEnv;
 	    (* Mise à jour de l'env *)
 	    let tempEnv = allocate_args 4 argList in
 	    let metEnv = Smap.add "this" 0 tempEnv in
