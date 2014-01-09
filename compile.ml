@@ -169,57 +169,70 @@ let funQvar_to_ident q = match q.qvarIdent with
     | _ -> assert false
 
 (******************** Compilation ********************)
-let compile_LVexpr lenv = function
+let rec compile_LVexpr lenv = function
   | ExprQident q -> begin match q with
     | Ident s ->
       begin
 	try let pos = Smap.find s lenv in (* Variable locale *)
-	    comment (" variable "^s) ++ li a0 pos 
-	    ++ add a0 a0 oreg fp ++ push a0
+	       comment (" variable locale "^s) 
+	    ++ li a0 pos 
+	    ++ add a0 a0 oreg fp 
+	    ++ push a0
 	with
 	  Not_found -> (* Variable globale *)
 	    let lab, _ = Hashtbl.find genv s in
-	    comment (" Variable globale au label "^lab) 
+	    comment (" variable globale au label "^lab) 
 	    ++ la a0 alab lab
 	    ++ push a0
       end
     | IdentIdent (s1, s2) -> assert false
   end
-  | ExprStar e -> assert false
-  | ExprDot (e,s) -> assert false
-  | _ -> (* n'arrive pas *) assert false
+  | ExprStar e -> assert false 
+  | ExprDot (e,s) -> 
+    (match e.exprTyp with 
+    | TypIdent c -> (* On un directement une classe *)
+      let offset = (Hashtbl.find classTable c)#offset s in
+          comment (" Variable de class "^s)
+      ++  compile_LVexpr lenv e.exprCont
+      ++  pop a0              (* on a l'adresse % fp, et l'offset *)
+      ++  add a0 a0 oi offset (* on a dans a0 l'adresse de la variable *)
+      ++  push a0             (* on pousse l'adresse variable *)
+    | TypPointer (TypIdent c) -> assert false
+    | _ -> assert false
+    )
+  | _ -> assert false
 
 let rec compile_expr ex lenv = match ex.exprCont with
 (* Compile l'expression et place le résultat au sommet de la pile *)
   | ExprInt i -> li a0 i ++ push a0
   | This -> assert false
   | Null -> assert false
-  | ExprQident q -> 
-    begin
-      match q with 
-      | Ident s -> 
+  | ExprQident q -> begin  match q with 
+    | Ident s -> 
       (* Pas la peine de vérifier que ça a été déclaré, on l'a déjà fait *)
-	let instruction =
-	  try
-	    let offset = Smap.find s lenv in
-	    lw a0 areg (offset, fp)
-	  with Not_found ->
-	    let lab, _ = Hashtbl.find genv s in
-	    lw a0 alab lab
-	in
-	comment (" chargement variable "^s) ++ instruction
-	++ push a0      
-      | IdentIdent (s1,s2) -> assert false
-    end
+      let instruction =
+	try
+	  let offset = Smap.find s lenv in
+	  lw a0 areg (offset, fp)
+	with Not_found ->
+	  let lab, _ = Hashtbl.find genv s in
+	  lw a0 alab lab
+      in
+      comment (" chargement variable "^s) ++ instruction
+      ++ push a0      
+    | IdentIdent (s1,s2) -> assert false
+  end
   | ExprStar e -> assert false
-  | ExprDot (e,s) -> (match e.exprTyp with 
+  | ExprDot (e,s) -> (* On récupère l'adresse de e comme une lvalue, puis on
+			calcul l'offset de s *)
+    (match e.exprTyp with 
     | TypIdent c -> 
       let offset = (Hashtbl.find classTable c)#offset s in
-          comment "Variable de classe "
-      ++  compile_expr {exprTyp = e.exprTyp; exprCont = ExprStar e} lenv 
+          comment (" Variable de class "^s)
+      ++  compile_LVexpr lenv e.exprCont
       ++  pop a0              (* on a l'adresse % fp, et l'offset *)
       ++  add a0 a0 oi offset (* on a dans a0 l'adresse de la variable *)
-      ++  la a0 areg (0, a0)  (* on charge la variable dans a0 *)
+      ++  lw a0 areg (0, a0)  (* on charge la variable dans a0 *)
       ++  push a0
     | TypPointer (TypIdent c) -> assert false
     | _ -> assert false
