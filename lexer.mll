@@ -35,7 +35,7 @@ let carac = ['\032'-'\033' '\035'-'\091'
   '\093'-'\127'] | "\\\\" | "\\\"" | "\\\'"
   |"\\x" hexa_digit hexa_digit
   |"\\n" |"\\t"
-let string = '"' carac* '"'
+let string = "\"" carac* "\""
 let space = [' ' '\t']
 
 rule token = parse
@@ -44,7 +44,7 @@ rule token = parse
   | "std::endl" | '"' "\\n" '"' { ENDL }
   | "\n" { Lexing.new_line lexbuf; token lexbuf }
   | space+ { token lexbuf }
-  | string as s { STRING (String.sub s 1 (String.length s - 2)) }
+  | string as s { STRING s}
   | ident as id { id_or_kwd id }
   | '=' { EQ }
   | "||" { OR }

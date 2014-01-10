@@ -210,6 +210,46 @@ let rec sizeof = function
 | TypIdent s -> (Hashtbl.find classTable s)#size
 | TypPointer t -> 4
  
+(* On récupère 4 caractères, si c'est du type "\x hexa hexa", on remplace *)
+let get_next_four s pos = 
+  try Some ((String.sub s pos 2), (String.sub s (pos+2) 2))
+  with Invalid_argument _ -> None
+
+
+let rec find_xhexa pos s =
+  match s.[pos] with
+  | '\\' ->(
+    match s.[pos+1] with
+    | 'x' -> (
+      let theEnd = String.sub s (pos+2) 2 in
+	  (
+	    let theCode = int_of_string ("0x"^theEnd) in
+	    theCode
+	  )
+    )
+    | _ -> raise (failwith "")
+  )
+  | _ -> raise (failwith "")
+
+(* Transforme les codes \x__ dans le code ascii qui convient *)
+let replace_xhexa string =
+  let rec run pos before string =
+      (* On vérifie qu'on n'est pas en bout de liste *)
+      if pos < String.length string then
+	(
+      (* On est en pos, on teste replace_xhexa *)
+	  let carac, new_pos = 
+	    try String.make 1 (char_of_int 
+				 (find_xhexa pos string)), pos+4
+	    with _ -> String.make 1 string.[pos], pos+1
+	  in
+	  let before = before ^ carac in
+	  (run new_pos before string)
+	)
+      else before  
+  in
+  run 0 "" string
+  
 let save_fp_ra = 
        comment " sauvegarde de fp" 
   ++   push fp
@@ -791,7 +831,9 @@ let compile p ofile =
   let aux (codefun, codemain) = compile_decl codefun codemain in 
   let codefun, code = List.fold_left aux (nop, nop) p.fichierDecl in
   let strings = Smap.fold 
-    (fun lab word data -> data ++ label lab ++ asciiz word) !dataMap nop 
+    (fun lab word data -> 
+      let unescaped = replace_xhexa word in
+      data ++ label lab ++ asciiz unescaped) !dataMap nop 
   and globalVars = 
     Hashtbl.fold 
       (fun str (lab, _) code -> code 
