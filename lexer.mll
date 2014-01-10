@@ -41,7 +41,7 @@ let space = [' ' '\t']
 rule token = parse
   | "#include <iostream>" { IOSTREAM }
   | "std::cout" { COUT }
-  | "std::endl" | '"' "\\n" '"' { ENDL }
+  | "std::endl" { ENDL }
   | "\n" { Lexing.new_line lexbuf; token lexbuf }
   | space+ { token lexbuf }
   | string as s { STRING s}
