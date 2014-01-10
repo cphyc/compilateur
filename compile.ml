@@ -20,6 +20,10 @@ let functionsTable: (string, int * string * typ list) Hashtbl.t =
 (* Associe à (classe*méthode)*profile un label *)
 let methodPosition: ((string*string)*typ list, string) Hashtbl.t = Hashtbl.create 17
 
+(* Tables des méthodes virtuelles du segment de donnée *)
+(* classe, (liste des méthodes*position dans la vm)*label *)
+let virtualMethodTable: (string, (string*int) list*string) Hashtbl.t = Hashtbl.create 7
+
 let print_profile profile = List.iter (fun t -> match t with
   | TypNull -> printf "\t TypeNull@."
   | TypVoid -> printf "\t TypeVoid@."
@@ -31,6 +35,14 @@ let rec eq_profile = Typer.eqProf
 
 (* "pushn size" empile "size" octets sur la pile *)
 let pushn = sub sp sp oi
+
+(* compteur pour de belles étiquettes *)
+let labelint = ref 0
+let new_label () = labelint := !labelint + 1; 
+  if !labelint = 42 then
+    "label_of_the_answer"
+  else
+    "label_"^(string_of_int (!labelint))
 
 class methodObject l r t s v = object (self)
   val mutable lab:string option = l
@@ -74,11 +86,33 @@ class classObject ident = object (self)
     (*   print_string "  pos: "; print_int pos; printf "@.";) positionMap; *)
     positionMap 
   method no_size_map = Smap.map (fun (size,position) -> position) positionMap
-  method build sizeof =
-    (* On construit la table des méthodes virtuelles *)
-    
+   method build sizeof =
+  (*   (\* On construit les tables des méthodes virtuelles *\) *)
+  (*   let build_vb class_name =  *)
+  (*     (\* On récupère toutes les méthodes de la classe *\) *)
+  (*     let methods = Hashtbl.find_all Typer.classMethods class_name in *)
+  (*     (\* On ne garde que celles qui sont virtuelles *\) *)
+  (*     let virtual_methods = List.filter  *)
+  (* 	(fun m -> (\* On récupère les classes qui sont virtuelles *\) *)
+  (* 	  let(((_,virt),_),_) = Hashtbl.find Typer.methodsTable (class_name, m) in *)
+  (* 	  virt) methods *)
+  (*     in *)
+  (*     (\* On transforme la liste de méthodes en une map de position*méthode *\) *)
+  (*     let map = List.fold_left  *)
+  (* 	(fun virtMet (map, position) -> Smap.add virtMet position map, position+4) *)
+  (* 	Smap.empty virtual_methods  *)
+  (*     in *)
+  (*     (\* On alloue un nombre d'octets dans le segment de donnée, *)
+  (* 	 c'est le nombre de méthodes virtuelles*\) *)
+  (*     let vmLabel = new_label () in *)
+  (*     Hashtbl.add virtualMethodTable class_name map *)
+  (*   in *)
+						
+    (* On construit les positions des variables + du pointeur vers la table 
+       de méthode virtuelle ! *)
     let rec explore first_free classe_name = 
-      (* let _ = printf "@.Entrée de explore\tclasse:\t"; print_string classe_name; printf "@."; *)
+      (* let _ = printf "@.Entrée de explore\tclasse:\t"; *)
+      (* print_string classe_name; printf "@."; *)
       (* 	printf "\t\t\toffset:\t"; print_int first_free; printf "@."; *)
       (* 	printf "\t\t\tvariables:\t"; *)
       (* in *)
@@ -91,14 +125,20 @@ class classObject ident = object (self)
       (* tant qu'il reste des parents, on les explore *)
       let rec explore_parent first_free = function 
 	| [] -> first_free, Smap.empty
-	| parent::list -> (* On alloue de la place pour le parent, puis on explore le reste *)
+	| parent::list -> (* On alloue de la place pour le parent, 
+			     puis on explore le reste *)
 	  (* let _ = print_string ("Exploration de parent "^parent); printf "@." in *)
+	  (* On créée la table des méthodes virtuelles de la classe *)
+	  (* let () = build_vb parent in *)
 	  let offset, map = explore first_free parent in
 	  let ending_offset, map' = explore_parent offset list in
-	  (* On ajoute un petit label à l'endroit où est ajoutée la classe pour s'y retrouver :D *)
-	  let mapWithLabelIsTotallyCool = Smap.add parent (sizeof (TypIdent parent), first_free) map' in
 	  (* On fusionne les deux maps *)
 	  (* let _ = print_string ("Fin de l'exploration de "^parent);printf "@." in *)
+	  (* On ajoute un petit label à l'endroit où est ajoutée la classe pour s'y
+	     retrouver :D *)
+	  let mapWithLabelIsTotallyCool = Smap.add parent (sizeof (TypIdent parent), 
+							   first_free) map' in
+
 	  ending_offset, Smap.fold Smap.add map mapWithLabelIsTotallyCool
       in		  
       let rec add_fields allocated_map first_free = function
@@ -148,14 +188,6 @@ let vrai = 1
 let faux = 0
 
 (********************* Utilitaires ********************)
-(* compteur pour de belles étiquettes *)
-let labelint = ref 0
-let new_label () = labelint := !labelint + 1; 
-  if !labelint = 42 then
-    "label_of_the_answer"
-  else
-    "label_"^(string_of_int (!labelint))
-
 (* renvoie la taille d'un type *)
 let rec sizeof = function
 | TypNull -> 4
@@ -676,10 +708,21 @@ let compile p ofile =
     (fun lab word data -> data ++ label lab ++ asciiz word) !dataMap nop 
   and globalVars = 
     Hashtbl.fold 
-      (fun str (lab, size) code -> code 
+      (fun str (lab, _) code -> code 
 	++ comment (" nid douillet de la variable "^str) 
-	++ label lab ++ dword [size]) genv nop
+	++ label lab 
+	++ dword [0]) genv nop
   in
+  (* let virtualTableCode =  *)
+  (*   Hashtbl.fold *)
+  (*     (fun str (methodList, lab) code ->  *)
+  (* 	(\* On construit une liste de 0 de la taille le nombre de méthode *\) *)
+  (* 	let liste = List.fold_left (fun l _ -> 0::l) [] methodList in *)
+  (* 	   code *)
+  (* 	++ comment (" table de méthode virtuelle de la classe "^str) *)
+  (* 	++ label lab *)
+  (* 	++ dword liste) virtualMethodTable nop *)
+  (* in *)
   let p =
     { text =
 	label "main"
@@ -690,10 +733,14 @@ let compile p ofile =
     ++  syscall
     ++  codefun;
       data = 
-	strings
-    ++  globalVars
+	comment " Chaines de caractères"
+    ++  strings
     ++  label "newline"
     ++  asciiz "\n"
+    ++  comment " Variables globales"
+    ++  globalVars
+    (* ++  comment " Tables des méthodes virtuelles" *)
+    (* ++  virtualTableCode *)
     }
   in
   let f = open_out ofile in
