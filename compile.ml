@@ -253,11 +253,15 @@ let replace_xhexa string =
   run 0 "" string
   
 let save_fp_ra = 
-       comment " sauvegarde de fp" 
-  ++   push fp
-  ++   comment " sauvegarde de ra"
-  ++   push ra
-let restore_ra_fp = lw ra areg (-8, fp) ++ lw fp areg (-4, fp)
+      comment " sauvegarde de fp" 
+  ++  push fp
+  ++  comment " sauvegarde de ra"
+  ++  push ra
+let restore_ra_fp = 
+      comment " restauration de ra"
+  ++  lw ra areg (-8, fp) 
+  ++  comment " restauration de fp"
+  ++  lw fp areg (-4, fp)
 
 let print_int = 
       comment " print_int" 
@@ -327,8 +331,7 @@ let rec compile_LVexpr lenv cenv ex = match ex.exprCont with
 	if Smap.mem s lenv then (* Variable locale *)
 	  let pos = Smap.find s lenv in 
 	       comment (" variable locale "^s) 
-	    ++ li a0 pos 
-	    ++ add a0 a0 oreg fp 
+	    ++ add a0 fp oi pos 
 	    ++ push a0
 	else if Smap.mem s cenv then (* Variable de classe *)
 	  let offset = Smap.find s cenv in 
@@ -461,15 +464,22 @@ and compile_expr lenv cenv ex = match ex.exprCont with
 	  else code ++ (compile_expr lenv cenv e)
 	| _ -> assert false
       in
+      let to_push_or_not_to_push = 
+	if Typer.typEq e.exprTyp TypVoid then
+	  nop
+	else push v0
+      in
           comment (" appel de la fonction "^s)
       ++  comment "  construction de la pile"
-      ++  (codeArgs p l)
+      ++  codeArgs p l
       ++  save_fp_ra
+      ++  comment " saut vers la fonction"
       ++  jal funlab
-      ++  sub sp sp oi (sizeArg typList)
+      ++  comment " on est revenu, on dépile par rapport à l'ancien fp"
+      ++  add sp fp oi (sizeArg typList)
       ++  restore_ra_fp
       ++  comment "  on met le résultat sur la pile"
-      ++  push v0
+      ++  to_push_or_not_to_push
     | ExprQident (rf, IdentIdent (s1,s2)) when s1==s2 -> assert false(* appel de cons *)
     | ExprQident (rf, IdentIdent (s1,s2)) -> assert false (* appel de méthode *)
     | ExprParenthesis e -> assert false (* compile_expr lenv {ExprApply (e,l)} *)
@@ -596,8 +606,9 @@ and compile_expr lenv cenv ex = match ex.exprCont with
 (* lenv est de type offset*registre Smap.t *)
 let rec compile_ins lenv cenv sp = function
   | InsSemicolon -> nop, lenv
-  | InsExpr e -> (* le résultat est placé en sommet de pile *)
-      compile_expr lenv cenv e, lenv
+  | InsExpr e -> 
+       compile_expr lenv cenv e 
+    ++ popn (sizeof false e.exprTyp), lenv
   | InsDef (v, option) when v.varRef ->
     let comm = comment (" allocation de la reference "^v.varIdent) in
     let nlenv = allocate_var v lenv in
