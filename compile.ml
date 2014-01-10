@@ -18,7 +18,10 @@ let functionsTable: (string, int * string * typ list) Hashtbl.t =
   Hashtbl.create 17
 
 (* Associe à (classe*méthode)*profile un label *)
-let methodPosition: ((string*string)*typ list, string) Hashtbl.t = Hashtbl.create 17
+let methodPosition: ((string*string)*typ list, string) Hashtbl.t 
+    = Hashtbl.create 17
+(* Associe à (classe*profile un label *)
+let consPosition: ((string)*typ list, string) Hashtbl.t = Hashtbl.create 17
 
 (* Tables des méthodes virtuelles du segment de donnée *)
 (* classe, (liste des méthodes*position dans la vm)*label *)
@@ -45,26 +48,23 @@ let new_label () = labelint := !labelint + 1;
     "label_"^(string_of_int (!labelint))
 
 class methodObject l r t s v = object (self)
-  val mutable lab:string option = l
+  val lab:string option = l
   val is_ref:bool = r 
   val typ : typ = t
   val profile : typ list = s
   val virt : bool = v
-  method get_profile = profile
-  method print_profile = print_profile profile
-  method get_lab : string = match lab with None -> assert false | Some s -> s
-  method set_lab label_creator = match lab with 
-  | None -> let newLab = label_creator () in lab <- Some newLab; newLab
-  | Some lab -> lab
 end
 
-class consObject l t s = object
-  val mutable lab:string option = l
+class consObject l t p = object
+  val lab:string = l
   val typ:typ = t
-  val profile:typ list = s
-  method set_lab s = lab <- Some s
-  method get_lab : text = match lab with None -> assert false | Some s -> label s 
+  val profile:typ list = p
+  val mutable code : text option = None
+  method profile = p
+  method code = code
 end
+
+let consTable: (string, consObject) Hashtbl.t = Hashtbl.create 17
 
 class classObject ident = object (self)
   val name : string = ident
@@ -74,13 +74,26 @@ class classObject ident = object (self)
   val constructors = Hashtbl.find_all Typer.classCons ident
   val mutable positionMap = Smap.empty
   val mutable size = 0
-  val mutable initCode : text = nop
   method name = name
   method get_fields = fields
   method get_parents = parents
-  method get_size = size
-  method set_size s = size <- s 
-  method init = initCode
+  method size = size
+  (* Appelle le constructeur correspondant et tous les autres *)
+  method init profile = 
+    (* Si on a défini un constructeur, on n'en a pas par défaut *)
+    match Hashtbl.find_all consTable self#name with
+    | [] -> (* Aucun constructeur, on renvoie le code par défaut, càd rien *)
+      let superConstructor = nop in
+          comment " constructeur par défaut : allocation de mémoire"
+      ++  pushn self#size
+      ++  comment " constructeur par défaut : appel des supers constructeurs en chaine"
+      ++  superConstructor
+    | consList -> (* Il y en a, on cherche le bon (n'échoue pas) *)
+      let constructor = List.find (fun consObj -> eq_profile profile consObj#profile) consList in
+      match constructor#code with None -> assert false | Some code -> 
+	    comment (" appel d'un constructeur personnalisé:allocation de mémoire puis exécution du code")
+	++  pushn size 
+	++  code
   method map =
     (* Smap.iter (fun name (size,pos) -> print_string (name^" - size: "); print_int size; *)
     (*   print_string "  pos: "; print_int pos; printf "@.";) positionMap; *)
@@ -165,9 +178,9 @@ class classObject ident = object (self)
       add_fields parent_map offset fields
       
     in
-    let size, map = explore 0 self#name in
+    let calculated_size, map = explore 0 self#name in
     positionMap <- map;
-    self#set_size size;
+    size <- calculated_size;
     (* (\* On créée le code d'initialisation d'une classe *\) *)
     (* let code =  *)
     (* initCode <- Smap.fold (fun ident size code ->  *)
@@ -178,6 +191,7 @@ class classObject ident = object (self)
     (* declClass <- c; *)
     (* size <- first_free; *)
 end
+
 (* Une classe : une déclaration, une map des tailles*positions, un code 
    d'initialisation, une taille *)
 let classTable: (string, classObject) Hashtbl.t = Hashtbl.create 17
@@ -193,7 +207,7 @@ let rec sizeof = function
 | TypNull -> 4
 | TypVoid -> 0 
 | TypInt -> 4
-| TypIdent s -> (Hashtbl.find classTable s)#get_size
+| TypIdent s -> (Hashtbl.find classTable s)#size
 | TypPointer t -> 4
  
 let save_fp_ra = 
@@ -492,25 +506,27 @@ let rec compile_ins lenv cenv sp = function
   | InsSemicolon -> nop, lenv
   | InsExpr e -> (* le résultat est placé en sommet de pile *)
       compile_expr lenv cenv e, lenv
-  | InsDef (v, op) when v.varRef ->
+  | InsDef (v, option) when v.varRef ->
     let comm = comment (" allocation de la reference "^v.varIdent) in
     let nlenv = allocate_var v lenv in
-    let rhs = match op with
+    let rhs = match option with
       | None -> pushn 4
       | Some InsDefExpr e -> compile_LVexpr nlenv cenv e
-      | Some InsDefIdent (c, elist) -> (* Classe *)
-	(Hashtbl.find classTable c)#init 
+      | Some InsDefIdent (c, elist) -> (* Appel du constructeur *)
+	let profile = List.map (fun e -> e.exprTyp) elist in
+	(Hashtbl.find classTable c)#init profile
     in
-comm ++ rhs, nlenv   
-  | InsDef (v, op) ->
+    comm ++ rhs, nlenv   
+  | InsDef (v, option) ->
     let comm = comment (" allocation de la variable "^v.varIdent) in
     let s =  sizeof v.varTyp in
     let nlenv = allocate_var v lenv in
-    let rhs = match op with
+    let rhs = match option with
       | None -> pushn s
       | Some InsDefExpr e -> compile_expr nlenv cenv e
-      | Some InsDefIdent (c, elist) -> (* Classe *)
-	(Hashtbl.find classTable c)#init
+      | Some InsDefIdent (c, elist) -> (* Appel du constructeur *)
+ 	let profile = List.map (fun e -> e.exprTyp) elist in
+	(Hashtbl.find classTable c)#init profile
     in
     comm ++ rhs, nlenv
   | InsIf (e,i) -> (* astuce de faineant *)
@@ -578,7 +594,6 @@ comm ++ rhs, nlenv
       | ExprStrStr s ->
 	let lab = new_label () in
 	dataMap := Smap.add lab s !dataMap;
-
 	code ++	print_label lab, lenv
     in
     let inscode, nlenv = (List.fold_left aux (nop, lenv) l) in
@@ -621,7 +636,8 @@ let compile_decl codefun codemain = function
 	let by_ref = qvar.qvarRef in
 	assert (not by_ref);
 	(
-	  (* ident est soit un string tout seul (une fonction), soit un couple de string (methode ou cons) *)
+	  (* ident est soit un string tout seul (une fonction),
+	     soit un couple de string (methode ou cons) *)
 	  match ident with
 	    (* Fonction main *)
 	  | Some "main", None ->
@@ -691,14 +707,37 @@ let compile_decl codefun codemain = function
 	      ++  comment (" méthode "^met^" de la classe "^cla)
 	      ++  label metLabel
 	      ++  metCode
-	      ++  comment " restauration de ra et fp"
-	      ++  restore_ra_fp
 	      ++  comment " retour à la case départ"
 	      ++  jr ra in
 	    new_codefun, codemain
 	  | _, _ -> assert false
 	)
-      | Tident s -> assert false
+      | Tident s -> (* Constructeur *)
+	(* On récupère son profil *)
+	let profile = List.map (fun arg -> arg.varTyp) argList in
+	(* On initialise le label du constructeur *)
+	let consLabel = new_label () in
+	(* On l'ajoute dans la table *)
+	Hashtbl.add consPosition (s, profile) consLabel;
+	let classEnv = (Hashtbl.find classTable s)#no_size_map in
+	(* Mise à jour de l'env *)
+	let tempEnv = allocate_args true argList in
+	let consEnv = Smap.add "this" 0 tempEnv in
+	(* On produit le code *)
+	let consCode, _ = List.fold_left
+	  ( fun (code, lenv) ins ->
+	    let inscode, nlenv = compile_ins lenv classEnv 8 ins in
+	    code ++ inscode, nlenv) (nop, consEnv) b
+	in
+	let new_codefun =
+	      codefun
+	  ++  comment (" constructeur de "^s)
+	  ++  label consLabel
+	  ++  consCode
+	  ++  comment " retour à la case départ"
+	  ++  jr ra 
+	in
+	new_codefun, codemain
     )
 
 let compile p ofile =
