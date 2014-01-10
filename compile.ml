@@ -24,10 +24,7 @@ let print_profile profile = List.iter (fun t -> match t with
   | TypIdent s -> print_string ("\t Classe"^s);printf "@.";
   | TypPointer _ -> ()) profile
 
-let eq_profile p1 p2 = 
-  try
-    List.for_all2 (fun t1 t2 -> t1 == t2) p1 p2
-  with Invalid_argument _ -> false
+let rec eq_profile = Typer.eqProf 
 
 (* "pushn size" empile "size" octets sur la pile *)
 let pushn = sub sp sp oi
@@ -92,7 +89,7 @@ class classObject classTable = object (self)
 				     on explore les supers *)
     (* On récupère la liste des méthodes dont le nom est str *)
     try let metList = Smap.find str methods in
-	(* Dans cette liste, y a t-il une methode qui a le bon profil ?*)
+	(* Dans cette liste, y a t-il une methode qui a le bon profil ? *)
 	Some (List.find (fun met -> eq_profile met#get_profile profile) metList)
     with Not_found -> 
       (* On explore tous les supers jusqu'à trouver la bonne *)
@@ -137,7 +134,6 @@ class classObject classTable = object (self)
 	    List.map (fun arg -> arg.varTyp) proto.argumentList 
 	  in
 	  (* ____ récupérer de chez ken *)
-	  (* Deux cas : soit on a un Ident -> méthode *)
 	  let _ =  match proto.protoVar with
 	  | Qvar qvar -> ( match qvar.qvarIdent with
 	    | Ident s ->
@@ -356,7 +352,9 @@ and compile_expr ex lenv cenv = match ex.exprCont with
           comment (" appel de la fonction "^s)
       ++  comment "  construction de la pile"
       ++  codeArgs
+      ++  save_fp_ra
       ++  jal funlab
+      ++  restore_ra_fp
       ++  comment "  on met le résultat sur la pile"
       ++  push v0
     | ExprQident (IdentIdent (s1,s2)) when s1==s2 -> assert false(* appel de cons *)
@@ -375,13 +373,23 @@ and compile_expr ex lenv cenv = match ex.exprCont with
       let metLab = metObject#get_lab in
       (* On compile la pile d'argument *)
       let codeArgs = 
-	List.fold_right (fun expr code -> code ++ compile_expr expr lenv cenv) l nop
+	List.fold_right 
+	  (fun expr code -> code ++ compile_expr expr lenv cenv) l nop
       in
-          comment (" appel de la méthode "^s^" de "^className)
+          comment (" appel de la méthode "^s^" de la classe "^className)
       ++  comment "  construction de la pile"
       ++  codeArgs
+      ++  comment "  sauvegarde de this (compile l'expression de gauche et laisse
+                     le résultat sur la pile"
+      ++  compile_LVexpr lenv cenv e.exprCont
+      ++  comment "  sauvegarde de fp, sp"
+      ++  move fp sp
+      ++  save_fp_ra
+      ++  comment "  code de la méthode"
       ++  jal metLab
-      ++  comment "  on met le résultat sur la pile"
+      ++  comment "  restauration de ra et fp"
+      ++  restore_ra_fp
+      ++  comment "  résultat sur la pile"
       ++  push v0
     | _ -> assert false
   )
@@ -612,8 +620,8 @@ let compile_decl codefun codemain = function
 	      in
 	      let lenv = allocate_args false p.argumentList in
 	      let codemain', _ = 
-		List.fold_left aux (codemain ++ save_fp_ra, lenv) b in
-	      codefun, la ra alab "main" ++ codemain'
+		List.fold_left aux (save_fp_ra ++ codemain, lenv) b in
+	      codefun, codemain'
 
 	  (* Fonction quelconque *)
 	  | Some s, None -> 
@@ -635,11 +643,9 @@ let compile_decl codefun codemain = function
 	          codefun
 	      ++  comment (" fonction "^s)
 	      ++  label funLabel
-	      ++  move fp sp
-	      ++  save_fp_ra
+	      ++  comment " on a sauvegardé fp et ra, on a donc sp à 8 de fp, c'est ce qu'on dit !"
+	      ++  add fp sp oi 8
 	      ++  funCode
-	      ++  comment " restauration de ra et fp"
-	      ++  restore_ra_fp
 	      ++  comment " retour à la case départ"
 	      ++  jr ra
 	    in
@@ -666,13 +672,15 @@ let compile_decl codefun codemain = function
 	      let inscode, nlenv = compile_ins lenv classEnv 8 ins in
 	      code ++ inscode, nlenv
 	    in
-	    let metCode, _ = List.fold_left aux (nop, metEnv) b in
-	    let codefun = 
+	    let metCode, _ = List.fold_left 
+	      (fun (code, lenv) ins -> 
+		let inscode, nlenv = compile_ins lenv classEnv 8 ins in
+		code ++ inscode, nlenv) (nop, metEnv) b
+	    in   
+	    let codeFun = 
 	          codefun
 	      ++  comment (" méthode "^met^" de la classe "^cla)
 	      ++  label metLabel
-	      ++  move fp sp
-	      ++  save_fp_ra
 	      ++  metCode
 	      ++  comment " restauration de ra et fp"
 	      ++  restore_ra_fp
