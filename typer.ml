@@ -6,6 +6,7 @@ module Smap = Map.Make(String)
 (* Environnement global : à chaque variable un type *)
 let genv: (typ Smap.t) ref = ref Smap.empty
 
+let classExistence: (string, unit) Hashtbl.t = Hashtbl.create 17
 let classInheritances: (string, string) Hashtbl.t = Hashtbl.create 17
 let classFields: (string, string * typ) Hashtbl.t = Hashtbl.create 17
 let classCons: (string, typ list) Hashtbl.t = Hashtbl.create 17
@@ -127,7 +128,7 @@ let typNum = function
 (* Vérifie qu'un type est bien formé *)
 let rec typBF = function
   | TypInt -> true
-  | TypIdent s -> Hashtbl.mem classInheritances s
+  | TypIdent s -> Hashtbl.mem classExistence s
   | TypPointer p -> typBF p
   | _ -> false
 
@@ -769,10 +770,13 @@ let declTyper = function
 	nv) vlist)   
       
   | Ast.DeclClass c -> 
+    if Hashtbl.mem classExistence c.Ast.className
+    then raise (Error ("Classe deja existente", c.Ast.declClassLoc));
     let l = match c.Ast.supersOpt with
-      | None -> [""]
-      | Some l' -> ""::l' in
+      | None -> []
+      | Some l' -> l' in
     List.iter (Hashtbl.add classInheritances c.Ast.className) l;
+    Hashtbl.add classExistence c.Ast.className ();
     let memberList = List.map (memberConverter c.Ast.className) 
       c.Ast.memberList in
     if (List.for_all 
