@@ -150,7 +150,7 @@ class classObject ident = object (self)
 	  (* let _ = print_string ("Fin de l'exploration de "^parent);printf "@." in *)
 	  (* On ajoute un petit label à l'endroit où est ajoutée la classe pour s'y
 	     retrouver :D *)
-	  let mapWithLabelIsTotallyCool = Smap.add parent (sizeof (TypIdent parent), 
+	  let mapWithLabelIsTotallyCool = Smap.add parent (sizeof false (TypIdent parent), 
 							   first_free) map' in
 
 	  ending_offset, Smap.fold Smap.add map mapWithLabelIsTotallyCool
@@ -164,7 +164,7 @@ class classObject ident = object (self)
 	    first_free, allocated_map 
 	  else
 	    (* On récupère la taille, on calcule le nouvel emplacement disponible *)
-	    let size = sizeof typ in
+	    let size = sizeof b typ in
 	    (* let _ = print_string (name^" "); print_int first_free; printf "\t" in *)
 	    let new_first_free = first_free + size in
 	    (* On récupère tout le touintouin avec comme premier emplacement dispo celui juste au dessus 
@@ -203,12 +203,14 @@ let faux = 0
 
 (********************* Utilitaires ********************)
 (* renvoie la taille d'un type *)
-let rec sizeof = function
-| TypNull -> 4
-| TypVoid -> 0 
-| TypInt -> 4
-| TypIdent s -> (Hashtbl.find classTable s)#size
-| TypPointer t -> 4
+let rec sizeof rf t = 
+  if rf then 4
+  else match t with
+  | TypNull -> 4
+  | TypVoid -> 0 
+  | TypInt -> 4
+  | TypIdent s -> (Hashtbl.find classTable s)#size
+  | TypPointer t -> 4
  
 let save_fp_ra = 
        comment " sauvegarde de fp" 
@@ -237,7 +239,7 @@ let allocate_args use_this argList =
   in
   let env, _ = List.fold_left 
     (fun (env, first_free) var -> 
-      let new_first_free = first_free + sizeof var.varTyp in
+      let new_first_free = first_free + (sizeof var.varRef var.varTyp) in
       Smap.add var.varIdent first_free env, new_first_free)
     init argList in
   env
@@ -252,7 +254,7 @@ let allocate_var v lenv =
 	(Smap.filter (fun _ off -> if off>=0 then false else true) lenv)
     with Not_found -> "", -8
   in
-  Smap.add v.varIdent (offset - sizeof v.varTyp) lenv
+  Smap.add v.varIdent (offset - (sizeof v.varRef v.varTyp)) lenv
     
 let funQvar_to_ident q = match q.qvarIdent with
     | Ident s -> Some s, None
@@ -332,32 +334,28 @@ and compile_expr lenv cenv ex = match ex.exprCont with
     ++  push a0
   | ExprQident (rf, q) -> begin match q with 
     | Ident s when rf -> 
-      Format.eprintf "Je m'appelle %s et je suis super content-e parce que je suis une référence ! :-)@." s;
-    (* Lâche copier-coller *)
-      begin
+      (* Lâche copier-coller *)
+      let instruction =
 	if Smap.mem s lenv then (* Variable locale *)
-	  let pos = Smap.find s lenv in 
-	       comment (" variable locale "^s) 
-	    ++ li a0 pos 
-	    ++ add a0 a0 oreg fp 
-	    ++ push a0
-	else if Smap.mem s cenv then (* Variable de classe *)
-	  let offset = Smap.find s cenv in 
-	  let this = Smap.find "this" lenv in
-	      comment (" variable de classe "^s)
-	  ++  comment "  récupération de this"
-	  ++  li a0 this
-	  ++  add a0 a0 oreg fp
-	  ++  comment ("  récupération de la variable "^s)
-	  ++  li a1 offset
-	  ++  add a0 a0 oreg a1
-	  ++  push a0
-	else (* Variable globale *)
-	  let lab, _ = try Hashtbl.find genv s with _ -> raise (Error "pas trouvé !") in
-	  comment (" variable globale au label "^lab) 
-	  ++ la a0 alab lab
-	  ++ push a0
-      end
+	  let offset = Smap.find s lenv in
+	  lw a0 areg (offset, fp)
+	else if Smap.mem s cenv then (* Membre d'une classe *)
+	  let this_offset = Smap.find "this" lenv in
+	  let var_offset = Smap.find s cenv in
+	  comment " position de this"
+	  ++  add a0 fp oi this_offset
+	  ++  comment " chargement de la variable"
+	  ++  lw a0 areg (var_offset, a0)
+	else
+	  let lab, _ = try Hashtbl.find genv s with _ -> 
+	    raise (Error ("pas trouvé "^s)) in 
+	  lw a0 alab lab
+      in
+      comment (" chargement variable "^s) ++ instruction
+      ++ push a0   
+      ++ pop a1
+      ++ lw a0 areg (0, a1)
+      ++ push a0
     | Ident s -> 
       (* Pas la peine de vérifier que ça a été déclaré, on l'a déjà fait *)
       let instruction =
@@ -384,7 +382,7 @@ and compile_expr lenv cenv ex = match ex.exprCont with
     ++ pop a1
     ++ lw a0 areg (0, a1)
     ++ push a0
-      | ExprDot (e,s) -> (* On récupère l'adresse de e comme une lvalue, puis on
+  | ExprDot (e,s) -> (* On récupère l'adresse de e comme une lvalue, puis on
 			calcul l'offset de s *)
     (match e.exprTyp with 
     | TypIdent c -> 
@@ -410,14 +408,18 @@ and compile_expr lenv cenv ex = match ex.exprCont with
       let size, funlab, typList = 
 	List.find (fun (s, l, tl) -> eq_profile tl p)
 	  (Hashtbl.find_all functionsTable s) in
-      let codeArgs = 
-	(* On fold à droite pour avoir dans le bon sens *)
-	List.fold_right 
-	  (fun expr code -> code ++ compile_expr lenv cenv expr) l nop
+      let rec codeArgs prof exprl = match (prof, exprl) with
+	| [], [] -> nop
+	| (_,rf)::prof', e::exprl' ->
+	  let code = codeArgs prof' exprl' in
+	  if rf 
+	  then code ++ (compile_LVexpr lenv cenv e)
+	  else code ++ (compile_expr lenv cenv e)
+	| _ -> assert false
       in
           comment (" appel de la fonction "^s)
       ++  comment "  construction de la pile"
-      ++  codeArgs
+      ++  (codeArgs p l)
       ++  save_fp_ra
       ++  jal funlab
       ++  restore_ra_fp
@@ -564,7 +566,7 @@ let rec compile_ins lenv cenv sp = function
     comm ++ rhs, nlenv   
   | InsDef (v, option) ->
     let comm = comment (" allocation de la variable "^v.varIdent) in
-    let s =  sizeof v.varTyp in
+    let s =  sizeof v.varRef v.varTyp in
     let nlenv = allocate_var v lenv in
     let rhs = match option with
       | None -> pushn s
@@ -660,7 +662,7 @@ let compile_decl codefun codemain = function
     let rec process = function
       | [] -> ()
       | var::vlist -> 
-	Hashtbl.add genv var.varIdent (new_label (), sizeof var.varTyp);
+	Hashtbl.add genv var.varIdent (new_label (), sizeof var.varRef var.varTyp);
 	process vlist
     in
     process vlist;
@@ -703,7 +705,8 @@ let compile_decl codefun codemain = function
 	    let funLabel = new_label () in
 	    let typList = 
 	      List.map (fun arg -> (arg.varTyp, arg.varRef)) argList in
-	    Hashtbl.add functionsTable s (sizeof typ, funLabel, typList);
+	    Hashtbl.add functionsTable s (sizeof qvar.qvarRef typ, 
+					  funLabel, typList);
 	
 	    (* On compile le bloc *)
 	    let aux (code, lenv) ins = 
