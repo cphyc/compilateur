@@ -128,13 +128,18 @@ class classObject ident = object (self)
 	| [] -> first_free, allocated_map
 	| (name, typ)::list -> (* On recherche dans la map si on n'a pas déjà ajouté le champ, sinon on
 				  le fait *)
-	  let size = sizeof typ in
-	  let new_first_free = first_free + size in
 	  if Smap.mem name allocated_map then
+	    let _ = printf "Ach nein !@." in
 	    first_free, allocated_map 
 	  else
-	    let finally_free, map = add_fields allocated_map new_first_free list in
-	    finally_free, Smap.add name (size, first_free) map
+	    (* On récupère la taille, on calcule le nouvel emplacement disponible *)
+	    let size = sizeof typ in
+	    let new_first_free = first_free + size in
+	    (* On récupère tout le touintouin avec comme premier emplacement dispo celui juste au dessus 
+	       (on a gardé de la place pour la variable *)
+	    let finally_free, map = 
+	      add_fields (Smap.add name (size, first_free) allocated_map) new_first_free list in
+	    finally_free, map
       in
       (* On explore effectivement les parents *)
       let offset, parent_map = explore_parent first_free parents in
