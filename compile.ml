@@ -70,34 +70,48 @@ class classObject ident = object (self)
   method set_size s = size <- s 
   method init = initCode
   method map =
-    Smap.iter (fun name (size,pos) -> print_string (name^" - size: "); print_int size;
-      print_string "  pos: "; print_int pos; printf "@.";) positionMap; positionMap
+    (* Smap.iter (fun name (size,pos) -> print_string (name^" - size: "); print_int size; *)
+    (*   print_string "  pos: "; print_int pos; printf "@.";) positionMap; *)
+    positionMap 
   method no_size_map = Smap.map (fun (size,position) -> position) positionMap
   method build sizeof =
     (* On construit la table des méthodes virtuelles *)
     
     let rec explore first_free classe_name = 
+      (* let _ = printf "@.Entrée de explore\tclasse:\t"; print_string classe_name; printf "@."; *)
+      (* 	printf "\t\t\toffset:\t"; print_int first_free; printf "@."; *)
+      (* 	printf "\t\t\tvariables:\t"; *)
+      (* in *)
       let parents = Hashtbl.find_all Typer.classInheritances classe_name in
+      (* let _ = printf "####>@."; *)
+      (* 	List.iter (fun paren -> print_string paren; printf "@.") parents; *)
+      (* 	printf "<####@."; *)
+      (* in *)
       let fields = Hashtbl.find_all Typer.classFields classe_name in
       (* tant qu'il reste des parents, on les explore *)
       let rec explore_parent first_free = function 
-	| [] -> 0, Smap.empty
+	| [] -> first_free, Smap.empty
 	| parent::list -> (* On alloue de la place pour le parent, puis on explore le reste *)
+	  (* let _ = print_string ("Exploration de parent "^parent); printf "@." in *)
 	  let offset, map = explore first_free parent in
 	  let ending_offset, map' = explore_parent offset list in
+	  (* On ajoute un petit label à l'endroit où est ajoutée la classe pour s'y retrouver :D *)
+	  let mapWithLabelIsTotallyCool = Smap.add parent (sizeof (TypIdent parent), first_free) map' in
 	  (* On fusionne les deux maps *)
-	  ending_offset, Smap.fold Smap.add map map'
+	  (* let _ = print_string ("Fin de l'exploration de "^parent);printf "@." in *)
+	  ending_offset, Smap.fold Smap.add map mapWithLabelIsTotallyCool
       in		  
       let rec add_fields allocated_map first_free = function
 	| [] -> first_free, allocated_map
 	| (name, typ)::list -> (* On recherche dans la map si on n'a pas déjà ajouté le champ, sinon on
 				  le fait *)
 	  if Smap.mem name allocated_map then
-	    let _ = printf "Ach nein !@." in
+	    (* let _ = printf "Ach nein !@." in *)
 	    first_free, allocated_map 
 	  else
 	    (* On récupère la taille, on calcule le nouvel emplacement disponible *)
 	    let size = sizeof typ in
+	    (* let _ = print_string (name^" "); print_int first_free; printf "\t" in *)
 	    let new_first_free = first_free + size in
 	    (* On récupère tout le touintouin avec comme premier emplacement dispo celui juste au dessus 
 	       (on a gardé de la place pour la variable *)
