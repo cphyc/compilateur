@@ -347,7 +347,7 @@ and compile_expr ex lenv cenv = match ex.exprCont with
     | ExprQident (Ident s) -> (* appel de fonction *)
       (* On recherche le profil correspondant *)
       let size, funlab, typList = 
-	List.find (fun (s, l, tl) -> tl == p)
+	List.find (fun (s, l, tl) -> eq_profile tl p)
 	  (Hashtbl.find_all functionsTable s) in
       let codeArgs = 
 	(* On fold à droite pour avoir dans le bon sens *)
