@@ -4,8 +4,9 @@ open Tast
 (* On crée un dictionnaire associant à chaque variable son type *)
 module Smap = Map.Make(String)
 (* Environnement global : à chaque variable un type *)
-let genv: (typ Smap.t) ref = ref Smap.empty
+let genv: ((typ*bool) Smap.t) ref = ref Smap.empty
 
+let classExistence: (string, unit) Hashtbl.t = Hashtbl.create 17
 let classInheritances: (string, string) Hashtbl.t = Hashtbl.create 17
 let classFields: (string, string * typ) Hashtbl.t = Hashtbl.create 17
 let classCons: (string, typ list) Hashtbl.t = Hashtbl.create 17
@@ -127,7 +128,7 @@ let typNum = function
 (* Vérifie qu'un type est bien formé *)
 let rec typBF = function
   | TypInt -> true
-  | TypIdent s -> Hashtbl.mem classInheritances s
+  | TypIdent s -> Hashtbl.mem classExistence s
   | TypPointer p -> typBF p
   | _ -> false
 
@@ -188,7 +189,7 @@ let rec argumentTyper lenv = function
     let t = v.varTyp in
     let nlenv, vlist, tlist = (argumentTyper lenv alist) in
     varUnique arg.Ast.argumentLoc v vlist;
-    (Smap.add v.varIdent v.varTyp nlenv), (v::vlist), (t::tlist)
+    (Smap.add v.varIdent (v.varTyp, v.varRef) nlenv), (v::vlist), (t::tlist)
 
 (* Cette fonction verifie qu'on n'a pas redondance de variable *)
 and varUnique loc v0 = function
@@ -278,9 +279,10 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
   | Ast.ExprInt i -> { exprTyp=TypInt; exprCont= ExprInt i }
   | Ast.This -> 
     begin
-    try {exprTyp = Smap.find "this" lenv ;  exprCont = This}
-    with Not_found -> raise (Error("pas de this dans une fonction",
-				   exp.Ast.exprLoc))
+      if not (Smap.mem "this" lenv)
+      then raise (Error("pas de this dans une fonction", exp.Ast.exprLoc));
+      let typ, _ = Smap.find "this" lenv in
+      {exprTyp = typ ;  exprCont = This}
     end
   | Ast.Null -> { exprTyp=TypNull; exprCont=Null } 
   | Ast.ExprEqual (e1, e2) -> 
@@ -304,10 +306,10 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	begin
 	  match minProf2 (geqListProf2 argTypList profList) with
 	  | [] -> raise (Error("Aucun profil ne correspond", exp.Ast.exprLoc))
-	  | [(t,_),p] -> 
+	  | [(t,r),p] -> 
 	    {exprTyp = t ; 
 	     exprCont = ExprApply ({exprTyp = t; 
-				    exprCont = ExprQident (Ident s)}, p,
+				    exprCont = ExprQident (r, Ident s)}, p,
 				   argList)}
 	  | _ -> raise (Error("Trop de profils",exp.Ast.exprLoc))
 	end
@@ -317,7 +319,7 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	then raise (Error ("Identificateur de fonction non déclaré.",
 			   exp.Ast.exprLoc)); 
         let className = match Smap.find "this" lenv with 
-	  | TypPointer (TypIdent s) -> s 
+	  | TypPointer (TypIdent s), rf -> s 
 	  | _ -> assert false in
 	let surclassList = Hashtbl.find_all classInheritances className in
 	let argList = List.map (exprTyper lenv) el in
@@ -328,10 +330,10 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	begin
 	  match minProf2 (geqListProf2 argTypList profList) with
 	  | [] -> raise (Error("Aucun profil ne correspond", exp.Ast.exprLoc))
-	  | [((c,v),(t,_)),p] -> 
+	  | [((c,v),(t,r)),p] -> 
 	    {exprTyp = t ; 
 	     exprCont = ExprApply ({exprTyp = t; 
-				    exprCont = ExprQident (Ident s)}, p, 
+				    exprCont = ExprQident (r, Ident s)}, p, 
 				   argList)}
 	  | _ -> raise (Error("Trop de profils",exp.Ast.exprLoc))
 	end
@@ -341,7 +343,7 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	then raise (Error ("Identificateur de fonction non déclaré.",
 			   exp.Ast.exprLoc)); 
         let c0 = match Smap.find "this" lenv with 
-	  | TypPointer (TypIdent s) -> s 
+	  | TypPointer (TypIdent s), _ -> s 
 	  | _ -> assert false in
 	if not (subClass c0 c)
 	then raise (Error(c0^" n'est pas un sous-type de "^c, exp.Ast.exprLoc));
@@ -354,10 +356,10 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	begin
 	  match minProf2 (geqListProf2 argTypList profList) with
 	  | [] -> raise (Error("Aucun profil ne correspond", exp.Ast.exprLoc))
-	  | [((c,v),(t,_)),p] -> 
+	  | [((c,v),(t,r)),p] -> 
 	    {exprTyp = t ; 
 	     exprCont = ExprApply ({exprTyp = t; 
-				    exprCont = ExprQident (Ident s)}, p,
+				    exprCont = ExprQident (r, Ident s)}, p,
 				   argList)}
 	  | _ -> raise (Error("Trop de profils",exp.Ast.exprLoc))
 	end
@@ -501,7 +503,7 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
 	      raise (Error ("ce n'est pas une reference", exp.Ast.exprLoc));
 	    {exprTyp = t ; 
 	     exprCont = ExprApply ({exprTyp = t; 
-				    exprCont = ExprQident (Ident s)}, p,
+				    exprCont = ExprQident (r, Ident s)}, p,
 				   argList)}
 	  | _ -> raise (Error("Trop de profils",exp.Ast.exprLoc))
 	end
@@ -512,7 +514,7 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
 	then raise (Error ("Identificateur de fonction non déclaré.",
 			   exp.Ast.exprLoc)); 
         let className = match Smap.find "this" lenv with 
-	  | TypPointer (TypIdent s) -> s 
+	  | (TypPointer (TypIdent s)), _ -> s
 	  | _ -> assert false in
 	let surclassList = Hashtbl.find_all classInheritances className in
 	let argList = List.map (exprTyper lenv) el in
@@ -528,7 +530,7 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
 	      raise (Error ("ce n'est pas une reference", exp.Ast.exprLoc));
 	    {exprTyp = t ; 
 	     exprCont = ExprApply ({exprTyp = t; 
-				    exprCont = ExprQident (Ident s)}, p,
+				    exprCont = ExprQident (r, Ident s)}, p,
 				   argList)}
 	  | _ -> raise (Error("Trop de profils",exp.Ast.exprLoc))
 	end
@@ -538,7 +540,7 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
 	then raise (Error ("Identificateur de fonction non déclaré.",
 			   exp.Ast.exprLoc)); 
         let c0 = match Smap.find "this" lenv with 
-	  | TypPointer (TypIdent s) -> s 
+	  | TypPointer (TypIdent s), _ -> s 
 	  | _ -> assert false in
 	if not (subClass c0 c)
 	then raise (Error(c0^" n'est pas un sous-type de "^c, exp.Ast.exprLoc));
@@ -556,7 +558,7 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
 				 exp.Ast.exprLoc));
 	    {exprTyp = t ; 
 	     exprCont = ExprApply ({exprTyp = t; 
-				    exprCont = ExprQident (Ident s)}, p,
+				    exprCont = ExprQident (r, Ident s)}, p,
 				   argList)}
 	  | _ -> raise (Error("Trop de profils",exp.Ast.exprLoc))
 	end
@@ -595,15 +597,15 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
 
   | Ast.ExprQident (Ast.Ident s) ->
     if Smap.mem s lenv then
-      let ttyp = Smap.find s lenv in
-      { exprTyp = ttyp; exprCont = ExprQident (Ident s) }
+      let ttyp, rf = Smap.find s lenv in
+      { exprTyp = ttyp; exprCont = ExprQident (rf, Ident s) }
     else if Smap.mem "this" lenv then 	(* Champ dans le constructeur *)
-      let cl = match Smap.find "this" lenv with
-	| TypPointer (TypIdent s) -> s
+      let cl, rf = match Smap.find "this" lenv with
+	| TypPointer (TypIdent s), rf -> s, rf
 	| _ -> assert false
       in
       let ftyp = fieldType exp.Ast.exprLoc cl s in
-      { exprTyp = ftyp; exprCont = ExprQident (Ident s) }
+      { exprTyp = ftyp; exprCont = ExprQident (rf, Ident s) }
     else
       raise (Error ("Variable \""^s^"\" non déclarée", exp.Ast.exprLoc))
   | Ast.ExprQident (Ast.IdentIdent (s1, s2)) -> assert false
@@ -658,7 +660,7 @@ let rec insTyper lenv qv ins = match ins.Ast.insCont with
 	  raise (Error ("Types incompatibles.", ins.Ast.insLoc));
 	if not (typBF tvar.varTyp) then
 	  raise (Error ("Type mal forme", ins.Ast.insLoc));
-	(Smap.add tvar.varIdent tvar.varTyp lenv),
+	(Smap.add tvar.varIdent (tvar.varTyp, tvar.varRef) lenv),
 	  InsDef (tvar, Some (InsDefExpr te))
       | Some Ast.InsDefIdent (s, elist) -> 
 	if tvar.varRef
@@ -675,14 +677,15 @@ let rec insTyper lenv qv ins = match ins.Ast.insCont with
 	begin
 	  match minProf (geqListProf p lprof) with
 	  | [] -> raise (Error ("no profile corresponds", ins.Ast.insLoc))
-	  | [p] -> (Smap.add tvar.varIdent tvar.varTyp lenv),
+	  | [p] -> (Smap.add tvar.varIdent (tvar.varTyp, tvar.varRef) lenv),
 	    InsDef (tvar, Some (InsDefIdent (s, nel)))
 	  | _ -> raise (Error ("several profiles correspond", 
 			       ins.Ast.insLoc))
 	end
       | None -> if not (typBF tvar.varTyp)
 	then raise (Error ("type mal formé", ins.Ast.insLoc));
-	( Smap.add tvar.varIdent tvar.varTyp lenv), InsDef (tvar, None) 
+	( Smap.add tvar.varIdent (tvar.varTyp, tvar.varRef) lenv), 
+	InsDef (tvar, None) 
     end
   | Ast.InsIf (e, i) -> 
     let _, ni = insTyper lenv qv i in
@@ -765,14 +768,17 @@ let declTyper = function
 	  raise (Error ("type mal formé", dv.Ast.declVarsLoc));
 	if Hashtbl.mem functionsTable nv.varIdent 
 	then raise (Error ("Variable déjà utilisée",dv.Ast.declVarsLoc));
-	genv := Smap.add nv.varIdent nv.varTyp !genv;
+	genv := Smap.add nv.varIdent (nv.varTyp, nv.varRef) !genv;
 	nv) vlist)   
       
   | Ast.DeclClass c -> 
+    if Hashtbl.mem classExistence c.Ast.className
+    then raise (Error ("Classe deja existente", c.Ast.declClassLoc));
     let l = match c.Ast.supersOpt with
-      | None -> [""]
-      | Some l' -> ""::l' in
+      | None -> []
+      | Some l' -> l' in
     List.iter (Hashtbl.add classInheritances c.Ast.className) l;
+    Hashtbl.add classExistence c.Ast.className ();
     let memberList = List.map (memberConverter c.Ast.className) 
       c.Ast.memberList in
     if (List.for_all 
@@ -828,8 +834,8 @@ let declTyper = function
 	    ( 
 	      { protoVar = var;
 		argumentList = argList},	   
-	      insListTyper (Smap.add "this" (TypPointer (TypIdent s1)) env) 
-		var b.Ast.blocCont;
+	      insListTyper (Smap.add "this" ((TypPointer (TypIdent s1)), false)
+			      env) var b.Ast.blocCont;
 	    )
 	else raise (Error ("la valeur de retour doit être numérique",
 			   p.Ast.protoLoc))
@@ -839,7 +845,7 @@ let declTyper = function
 	( 
 	  { protoVar = var ;
 	    argumentList = argList},
-	  insListTyper (Smap.add "this" (TypPointer (TypIdent s)) env) 
+	  insListTyper (Smap.add "this" ((TypPointer (TypIdent s)), false) env) 
 	    var b.Ast.blocCont;
 	)
     | Ast.TidentTident (s1, s2) -> (* Constructeur *)
@@ -848,7 +854,7 @@ let declTyper = function
 	( 
 	  { protoVar = var ;
 	    argumentList = argList },
-	  insListTyper (Smap.add "this" (TypPointer (TypIdent s2)) env) 
+	  insListTyper (Smap.add "this" ((TypPointer (TypIdent s2)),false) env) 
 	    var b.Ast.blocCont;
 	)
       else raise (Error (s2^" n'est pas un constructeur", p.Ast.protoLoc))
