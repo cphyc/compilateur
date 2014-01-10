@@ -70,7 +70,8 @@ class classObject classTable = object (self)
   method decl = declClass
   method offset s = fst (Smap.find s map)
   method add_method str m =
-    (* On veut ajouter une méthode : on récupère la liste des méthodes de memes nom *)
+    (* On veut ajouter une méthode : 
+       on récupère la liste des méthodes de memes nom *)
     let mList = try Smap.find str methods with 
 	Not_found -> [] in
     (* On lui ajoute la méthode m *)
@@ -79,7 +80,10 @@ class classObject classTable = object (self)
     methods <- Smap.add str list methods
   method add_method_label str profile label_creator =
     (* On récupère la méthode associée *)
-    let met = match self#get_method str profile with None -> assert false | Some m -> m in
+    (* print_string ("Recherche de "^str^" :" );print_profile profile; printf "@."; *)
+    let met = match self#get_method str profile with 
+      | None -> assert false
+      | Some m -> m in
     (* On lui demande créer un nouveau label *)
     met#set_lab label_creator;
   method get_method str profile = (* On commence par chercher dans la classe, sinon
@@ -267,7 +271,7 @@ let rec compile_LVexpr lenv cenv = function
       end
     | IdentIdent (s1, s2) -> assert false
   end
-  | ExprStar e -> assert false 
+  | ExprStar e -> assert false
   | ExprDot (e,s) -> 
     (match e.exprTyp with 
     | TypIdent c -> (* On un directement une classe *)
@@ -286,7 +290,9 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
 (* Compile l'expression et place le résultat au sommet de la pile *)
   | ExprInt i -> li a0 i ++ push a0
   | This -> assert false
-  | Null -> assert false
+  | Null -> 
+        li a0 0
+    ++  push a0
   | ExprQident q -> begin match q with 
     | Ident s -> 
       (* Pas la peine de vérifier que ça a été déclaré, on l'a déjà fait *)
@@ -305,7 +311,8 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
 	  let lab, _ = try Hashtbl.find genv s with _ -> raise (Error ("pas trouvé "^s)) in 
 	  lw a0 alab lab
       in
-      comment (" chargement variable "^s) ++ instruction
+         comment (" chargement variable "^s) 
+      ++ instruction
       ++ push a0      
     | IdentIdent (s1,s2) -> assert false
   end
@@ -403,7 +410,7 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
     ++  lw a1 areg (0, a0)
     ++  comment " on la place sur la pile"
     ++  push a1
-    ++  comment " on incrémente"
+    ++  comment " on décrémente"
     ++  sub a1 a1 oi 1 
     ++  sw a1 areg (0, a0)
 
@@ -413,7 +420,7 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
     ++  pop a0
     ++  comment " on récupère la valeur"
     ++  lw a1 areg (0, a0)
-    ++  comment " on incrémente"
+    ++  comment " on décrémente"
     ++  sub a1 a1 oi 1 
     ++  sw a1 areg (0, a0)
     ++  comment " on la place sur la pile"
@@ -507,14 +514,26 @@ let rec compile_ins lenv cenv sp = function
     let init = compile_expr_list l1 in
     let test = compile_expr e lenv cenv in
     let modify = compile_expr_list l2 in
-    let core, _ = compile_ins lenv cenv sp i in
+    let core, pouet = compile_ins lenv cenv sp i in
+    (* print_string "i :"; Format.print_int (Smap.find "i" pouet); printf "@."; *)
+    (* print_string "cpt :"; Format.print_int (Smap.find "cpt" pouet); printf "@."; *)
+    (* print_string "j :"; Format.print_int (Smap.find "j" pouet); printf "@."; *)
+    
     let labtest, way_out = new_label (), new_label () in
-    comment " initialisation de la boucle for" ++ init
-    ++ comment " test de sa condition" ++ label labtest 
-    ++ test ++ pop a0 ++ beqz a0 way_out
-    ++ comment " coeur de la boucle for" ++ core
-    ++ comment " modification des paramètres testés" ++ modify ++ b labtest
-    ++ comment " sortie de la boucle for" ++ label way_out, lenv
+       comment " initialisation de la boucle for" 
+    ++ init
+    ++ comment " test de sa condition" 
+    ++ label labtest 
+    ++ test 
+    ++ pop a0 
+    ++ beqz a0 way_out
+    ++ comment " coeur de la boucle for" 
+    ++ core
+    ++ comment " modification des paramètres testés" 
+    ++ modify 
+    ++ b labtest
+    ++ comment " sortie de la boucle for" 
+    ++ label way_out, lenv
   | InsBloc b ->
     let aux (code', lenv) ins =
       let inscode, nlenv = compile_ins lenv cenv sp ins in
