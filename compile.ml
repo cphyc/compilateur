@@ -12,9 +12,10 @@ let dataMap = ref Smap.empty
 (* associe à un identificateur un couple de label * taille_de_la_variable *)
 let (genv : (string, string * int) Hashtbl.t) = Hashtbl.create 17
 
-(* Table de hashage associant à un identificateur sa taille, son label et la taille 
-   de ses args *)
-let functionsTable: (string, int * string * typ list) Hashtbl.t = Hashtbl.create 17
+(* Table de hashage associant à un identificateur sa taille, son label 
+   et la taille de ses args *)
+let functionsTable: (string, int * string * typ list) Hashtbl.t = 
+  Hashtbl.create 17
 
 let print_profile profile = List.iter (fun t -> match t with
   | TypNull -> printf "\t TypeNull@."
@@ -30,6 +31,7 @@ let eq_profile p1 p2 =
 
 (* "pushn size" empile "size" octets sur la pile *)
 let pushn = sub sp sp oi
+
 class methodObject l r t s v = object (self)
   val mutable lab:string option = l
   val is_ref:bool = r 
@@ -271,7 +273,8 @@ let rec compile_LVexpr lenv cenv = function
       end
     | IdentIdent (s1, s2) -> assert false
   end
-  | ExprStar e -> assert false
+  | ExprStar e -> 
+    compile_expr e lenv cenv 
   | ExprDot (e,s) -> 
     (match e.exprTyp with 
     | TypIdent c -> (* On un directement une classe *)
@@ -286,7 +289,7 @@ let rec compile_LVexpr lenv cenv = function
     )
   | _ -> assert false
 
-let rec compile_expr ex lenv cenv = match ex.exprCont with
+and compile_expr ex lenv cenv = match ex.exprCont with
 (* Compile l'expression et place le résultat au sommet de la pile *)
   | ExprInt i -> li a0 i ++ push a0
   | This -> assert false
@@ -311,13 +314,16 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
 	  let lab, _ = try Hashtbl.find genv s with _ -> raise (Error ("pas trouvé "^s)) in 
 	  lw a0 alab lab
       in
-         comment (" chargement variable "^s) 
-      ++ instruction
+      comment (" chargement variable "^s) ++ instruction
       ++ push a0      
     | IdentIdent (s1,s2) -> assert false
   end
-  | ExprStar e -> assert false
-  | ExprDot (e,s) -> (* On récupère l'adresse de e comme une lvalue, puis on
+  | ExprStar e -> 
+    compile_expr e lenv cenv 
+    ++ pop a1
+    ++ lw a0 areg (0, a1)
+    ++ push a0
+      | ExprDot (e,s) -> (* On récupère l'adresse de e comme une lvalue, puis on
 			calcul l'offset de s *)
     (match e.exprTyp with 
     | TypIdent c -> 
@@ -425,7 +431,8 @@ let rec compile_expr ex lenv cenv = match ex.exprCont with
     ++  sw a1 areg (0, a0)
     ++  comment " on la place sur la pile"
     ++  push a1
-  | ExprAmpersand e -> assert false
+  | ExprAmpersand e -> 
+    compile_LVexpr lenv cenv e.exprCont
   | ExprExclamation e ->
     let lab2, lab1 = new_label (), new_label () in
     compile_expr e lenv cenv

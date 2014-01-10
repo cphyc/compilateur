@@ -2,3 +2,7 @@
 *.s
 
 docs/tests/out
+
+a.out
+
+test.cpp
