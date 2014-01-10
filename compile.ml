@@ -240,8 +240,9 @@ let funQvar_to_ident q = match q.qvarIdent with
     | IdentIdent (s1, s2) -> Some s1, Some s2
 
 (******************** Compilation ********************)
-let rec compile_LVexpr lenv cenv = function
-  | ExprQident q -> begin match q with
+let rec compile_LVexpr lenv cenv ex = match ex.exprCont with
+  | ExprQident (rf, q) -> begin match q with
+    | Ident s when rf -> li a0 0
     | Ident s ->
       begin
 	if Smap.mem s lenv then (* Variable locale *)
@@ -270,13 +271,13 @@ let rec compile_LVexpr lenv cenv = function
     | IdentIdent (s1, s2) -> assert false
   end
   | ExprStar e -> 
-    compile_expr e lenv cenv 
+    compile_expr lenv cenv e 
   | ExprDot (e,s) -> 
     (match e.exprTyp with 
     | TypIdent c -> (* On un directement une classe *)
       let offset = (Hashtbl.find classTable c)#offset s in
           comment (" Variable de class "^s)
-      ++  compile_LVexpr lenv cenv e.exprCont
+      ++  compile_LVexpr lenv cenv e
       ++  pop a0              (* on a l'adresse % fp, et l'offset *)
       ++  add a0 a0 oi offset (* on a dans a0 l'adresse de la variable *)
       ++  push a0             (* on pousse l'adresse variable *)
@@ -285,14 +286,14 @@ let rec compile_LVexpr lenv cenv = function
     )
   | _ -> assert false
 
-and compile_expr ex lenv cenv = match ex.exprCont with
+and compile_expr lenv cenv ex = match ex.exprCont with
 (* Compile l'expression et place le résultat au sommet de la pile *)
   | ExprInt i -> li a0 i ++ push a0
   | This -> assert false
   | Null -> 
         li a0 0
     ++  push a0
-  | ExprQident q -> begin match q with 
+  | ExprQident (rf, q) -> begin match q with 
     | Ident s -> 
       (* Pas la peine de vérifier que ça a été déclaré, on l'a déjà fait *)
       let instruction =
@@ -315,7 +316,7 @@ and compile_expr ex lenv cenv = match ex.exprCont with
     | IdentIdent (s1,s2) -> assert false
   end
   | ExprStar e -> 
-    compile_expr e lenv cenv 
+    compile_expr lenv cenv e
     ++ pop a1
     ++ lw a0 areg (0, a1)
     ++ push a0
@@ -325,7 +326,7 @@ and compile_expr ex lenv cenv = match ex.exprCont with
     | TypIdent c -> 
       let offset = (Hashtbl.find classTable c)#offset s in
           comment (" Variable de class "^s)
-      ++  compile_LVexpr lenv cenv e.exprCont
+      ++  compile_LVexpr lenv cenv e
       ++  pop a0              (* on a l'adresse % fp, et l'offset *)
       ++  add a0 a0 oi offset (* on a dans a0 l'adresse de la variable *)
       ++  lw a0 areg (0, a0)  (* on charge la variable dans a0 *)
@@ -334,20 +335,21 @@ and compile_expr ex lenv cenv = match ex.exprCont with
     )
   | ExprEqual (e1,e2) -> (* On compile l'expression e1, c'est une lvalue donc 
 			    le résultat est son adresse *)
-    compile_LVexpr lenv cenv e1.exprCont
-    ++ comment " calcul de la valeur droite" ++ compile_expr e2 lenv cenv 
+    compile_LVexpr lenv cenv e1
+    ++ comment " calcul de la valeur droite" ++ compile_expr lenv cenv e2
     ++ pop a1 ++ pop a0 
     ++ comment " sauvegarde de la valeur" ++ sw a1 areg (0, a0)
   | ExprApply (e, p, l) -> ( 		(* cadeau : p profil cherché *)
     match e.exprCont with
-    | ExprQident (Ident s) -> (* appel de fonction *)
+    | ExprQident (rf, Ident s) -> (* appel de fonction *)
       (* On recherche le profil correspondant *)
       let size, funlab, typList = 
 	List.find (fun (s, l, tl) -> eq_profile tl p)
 	  (Hashtbl.find_all functionsTable s) in
       let codeArgs = 
 	(* On fold à droite pour avoir dans le bon sens *)
-	List.fold_right (fun expr code -> code ++ compile_expr expr lenv cenv) l nop
+	List.fold_right 
+	  (fun expr code -> code ++ compile_expr lenv cenv expr) l nop
       in
           comment (" appel de la fonction "^s)
       ++  comment "  construction de la pile"
@@ -357,8 +359,8 @@ and compile_expr ex lenv cenv = match ex.exprCont with
       ++  restore_ra_fp
       ++  comment "  on met le résultat sur la pile"
       ++  push v0
-    | ExprQident (IdentIdent (s1,s2)) when s1==s2 -> assert false(* appel de cons *)
-    | ExprQident (IdentIdent (s1,s2)) -> assert false (* appel de méthode *)
+    | ExprQident (rf, IdentIdent (s1,s2)) when s1==s2 -> assert false(* appel de cons *)
+    | ExprQident (rf, IdentIdent (s1,s2)) -> assert false (* appel de méthode *)
     | ExprParenthesis e -> assert false (* compile_expr lenv {ExprApply (e,l)} *)
     | ExprDot (e,s) -> 
       (* On compile l'adresse de e *)
@@ -374,14 +376,14 @@ and compile_expr ex lenv cenv = match ex.exprCont with
       (* On compile la pile d'argument *)
       let codeArgs = 
 	List.fold_right 
-	  (fun expr code -> code ++ compile_expr expr lenv cenv) l nop
+	  (fun expr code -> code ++ compile_expr lenv cenv expr) l nop
       in
           comment (" appel de la méthode "^s^" de la classe "^className)
       ++  comment "  construction de la pile"
       ++  codeArgs
       ++  comment "  sauvegarde de this (compile l'expression de gauche et laisse
                      le résultat sur la pile"
-      ++  compile_LVexpr lenv cenv e.exprCont
+      ++  compile_LVexpr lenv cenv e
       ++  comment "  sauvegarde de fp, sp"
       ++  move fp sp
       ++  save_fp_ra
@@ -395,7 +397,7 @@ and compile_expr ex lenv cenv = match ex.exprCont with
   )
   | ExprNew (s, l) -> assert false
   | ExprRIncr e ->(* compile e, le renvoie puis l'incrémente *)
-        compile_LVexpr lenv cenv e.exprCont
+        compile_LVexpr lenv cenv e
     ++  comment " adresse de l'expression"
     ++  pop a0
     ++  comment " on récupère la valeur"
@@ -406,7 +408,7 @@ and compile_expr ex lenv cenv = match ex.exprCont with
     ++  add a1 a1 oi 1 
     ++  sw a1 areg (0, a0)
   | ExprLIncr e -> (* compile e, l'incrément puis le renvoie *)
-        compile_LVexpr lenv cenv e.exprCont
+        compile_LVexpr lenv cenv e
     ++  comment " adresse de l'expression"
     ++  pop a0                (* adresse de l'expression *)
     ++  comment " on récupère la valeur"
@@ -417,7 +419,7 @@ and compile_expr ex lenv cenv = match ex.exprCont with
     ++  comment " on la place sur la pile"
     ++  push a1
   | ExprRDecr e ->
-        compile_LVexpr lenv cenv e.exprCont
+        compile_LVexpr lenv cenv e
     ++  comment " adresse de l'expression"
     ++  pop a0
     ++  comment " on récupère la valeur"
@@ -429,7 +431,7 @@ and compile_expr ex lenv cenv = match ex.exprCont with
     ++  sw a1 areg (0, a0)
 
   | ExprLDecr e -> (* On compile l'expression, on ajoute un et on la stocke *)
-        compile_LVexpr lenv cenv e.exprCont
+        compile_LVexpr lenv cenv e
     ++  comment " adresse de l'expression"
     ++  pop a0
     ++  comment " on récupère la valeur"
@@ -440,20 +442,20 @@ and compile_expr ex lenv cenv = match ex.exprCont with
     ++  comment " on la place sur la pile"
     ++  push a1
   | ExprAmpersand e -> 
-    compile_LVexpr lenv cenv e.exprCont
+    compile_LVexpr lenv cenv e
   | ExprExclamation e ->
     let lab2, lab1 = new_label (), new_label () in
-    compile_expr e lenv cenv
+    compile_expr lenv cenv e
     ++ comment " Négation logique" ++ pop a0 ++ beqz a0 lab1
     ++ comment "  cas non nul :" ++ li a0 faux ++ push a0 ++ b lab2
     ++ label lab1 ++ comment "  cas nul :" ++ li a0 vrai ++ push a0
     ++ label lab2
-  | ExprMinus e -> compile_expr e lenv cenv ++ pop a0 
+  | ExprMinus e -> compile_expr lenv cenv e ++ pop a0 
     ++ comment " Négation arithmétique" ++ neg a0 a0 ++ push a0
-  | ExprPlus e -> compile_expr e lenv cenv
+  | ExprPlus e -> compile_expr lenv cenv e
   | ExprOp (e1,o,e2) -> 
     begin
-      let ce1, ce2 = compile_expr e1 lenv cenv, compile_expr e2 lenv cenv in
+      let ce1, ce2 = compile_expr lenv cenv e1, compile_expr lenv cenv e2 in
       let calc = ce1 ++ ce2 ++ pop a1 ++ pop a0 in
       let comp_op operator = calc ++ (operator a0 a0 a1) ++ push a0 in
       let arith_op operator = calc ++ (operator a0 a0 oreg a1) ++ push a0 in
@@ -482,20 +484,30 @@ and compile_expr ex lenv cenv = match ex.exprCont with
 	++ push zero ++ b label2 ++ label label1 
 	++ li a0 vrai ++ push a0 ++ label label2
     end
-  | ExprParenthesis e -> compile_expr e lenv cenv
+  | ExprParenthesis e -> compile_expr lenv cenv e
 
 (* lenv est de type offset*registre Smap.t *)
 let rec compile_ins lenv cenv sp = function
   | InsSemicolon -> nop, lenv
   | InsExpr e -> (* le résultat est placé en sommet de pile *)
-      compile_expr e lenv cenv, lenv
+      compile_expr lenv cenv e, lenv
+  | InsDef (v, op) when v.varRef ->
+    let comm = comment (" allocation de la reference "^v.varIdent) in
+    let nlenv = allocate_var v lenv in
+    let rhs = match op with
+      | None -> pushn 4
+      | Some InsDefExpr e -> compile_LVexpr nlenv cenv e
+      | Some InsDefIdent (c, elist) -> (* Classe *)
+	(Hashtbl.find classTable c)#init 
+    in
+comm ++ rhs, nlenv   
   | InsDef (v, op) ->
     let comm = comment (" allocation de la variable "^v.varIdent) in
-    let s = sizeof v.varTyp in
+    let s =  sizeof v.varTyp in
     let nlenv = allocate_var v lenv in
     let rhs = match op with
       | None -> pushn s
-      | Some InsDefExpr e -> compile_expr e nlenv cenv
+      | Some InsDefExpr e -> compile_expr nlenv cenv e
       | Some InsDefIdent (c, elist) -> (* Classe *)
 	(Hashtbl.find classTable c)#init
     in
@@ -506,7 +518,7 @@ let rec compile_ins lenv cenv sp = function
     let if_true, way_out = new_label (), new_label () in
     let ins1, _ = compile_ins lenv cenv sp i1 in
     let ins2, _ = compile_ins lenv cenv sp i2 in
-        compile_expr e lenv cenv 
+        compile_expr lenv cenv e
     ++  pop a0 
     ++  bnez a0 if_true 
     ++  comment " si faux :" 
@@ -520,14 +532,14 @@ let rec compile_ins lenv cenv sp = function
     let way_in, way_out = new_label(), new_label() in
     let ins1, _ = compile_ins lenv cenv sp i in
     comment " entrée de la boucle while" ++ label way_in 
-    ++ comment " test du while" ++ compile_expr e lenv cenv ++ pop a0 ++ beqz a0 way_out
+    ++ comment " test du while" ++ compile_expr lenv cenv e ++ pop a0 ++ beqz a0 way_out
     ++ comment " coeur du while" ++ ins1 ++ b way_in
     ++ comment " sortie de la boucle while" ++ label way_out, lenv
   | InsFor (l1,e,l2,i) -> 
     let compile_expr_list = 
-      List.fold_left (fun code e -> code ++ compile_expr e lenv cenv) nop in
+      List.fold_left (fun code e -> code ++ compile_expr lenv cenv e) nop in
     let init = compile_expr_list l1 in
-    let test = compile_expr e lenv cenv in
+    let test = compile_expr lenv cenv e in
     let modify = compile_expr_list l2 in
     let core, pouet = compile_ins lenv cenv sp i in
     (* print_string "i :"; Format.print_int (Smap.find "i" pouet); printf "@."; *)
@@ -560,7 +572,7 @@ let rec compile_ins lenv cenv sp = function
     let aux (code, lenv) = function
       | ExprStrExpr e -> 
 	let newcode = 
-	  (compile_expr e lenv cenv) ++ pop a0 ++ print_int
+	  (compile_expr lenv cenv e) ++ pop a0 ++ print_int
 	in code ++ newcode, lenv
       | ExprStrStr s ->
 	let lab = new_label () in
@@ -573,7 +585,7 @@ let rec compile_ins lenv cenv sp = function
     comm ++ inscode, nlenv
   | InsReturn eopt -> 
     let expr = match eopt with 
-      | Some e -> compile_expr e lenv cenv
+      | Some e -> compile_expr lenv cenv e
       | None -> nop 
     in
         expr

@@ -51,7 +51,8 @@ and exprContT =
 | ExprInt of int
 | This
 | Null
-| ExprQident of qident
+| ExprQident of bool * qident
+(* bool permet de savoir si c'est une reference *)
 | ExprStar of expr
 | ExprDot of expr * string
 | ExprEqual of expr * expr
