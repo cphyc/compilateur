@@ -14,11 +14,11 @@ let (genv : (string, string * int) Hashtbl.t) = Hashtbl.create 17
 
 (* Table de hashage associant à un identificateur sa taille, son label 
    et la taille de ses args *)
-let functionsTable: (string, int * string * typ list) Hashtbl.t = 
+let functionsTable: (string, int * string * (typ * bool) list) Hashtbl.t = 
   Hashtbl.create 17
 
 (* Associe à (classe*méthode)*profile un label *)
-let methodPosition: ((string*string)*typ list, string) Hashtbl.t = Hashtbl.create 17
+let methodPosition: ((string*string)*(typ*bool) list, string) Hashtbl.t = Hashtbl.create 17
 
 (* Tables des méthodes virtuelles du segment de donnée *)
 (* classe, (liste des méthodes*position dans la vm)*label *)
@@ -247,7 +247,25 @@ let funQvar_to_ident q = match q.qvarIdent with
 (******************** Compilation ********************)
 let rec compile_LVexpr lenv cenv ex = match ex.exprCont with
   | ExprQident (rf, q) -> begin match q with
-    | Ident s when rf -> li a0 0
+    | Ident s when rf -> 
+      (* Lâche copier-coller *)
+      let instruction =
+	if Smap.mem s lenv then (* Variable locale *)
+	  let offset = Smap.find s lenv in
+	  lw a0 areg (offset, fp)
+	else if Smap.mem s cenv then (* Membre d'une classe *)
+	  let this_offset = Smap.find "this" lenv in
+	  let var_offset = Smap.find s cenv in
+	      comment " position de this"
+	  ++  add a0 fp oi this_offset
+	  ++  comment " chargement de la variable"
+	  ++  lw a0 areg (var_offset, a0)
+	else
+	  let lab, _ = try Hashtbl.find genv s with _ -> raise (Error ("pas trouvé "^s)) in 
+	  lw a0 alab lab
+      in
+      comment (" chargement variable "^s) ++ instruction
+      ++ push a0      
     | Ident s ->
       begin
 	if Smap.mem s lenv then (* Variable locale *)
@@ -299,7 +317,35 @@ and compile_expr lenv cenv ex = match ex.exprCont with
         li a0 0
     ++  push a0
   | ExprQident (rf, q) -> begin match q with 
+    | Ident s when rf -> 
+      Format.eprintf "Je m'appelle %s et je suis super content-e parce que je suis une référence ! :-)@." s;
+    (* Lâche copier-coller *)
+      begin
+	if Smap.mem s lenv then (* Variable locale *)
+	  let pos = Smap.find s lenv in 
+	       comment (" variable locale "^s) 
+	    ++ li a0 pos 
+	    ++ add a0 a0 oreg fp 
+	    ++ push a0
+	else if Smap.mem s cenv then (* Variable de classe *)
+	  let offset = Smap.find s cenv in 
+	  let this = Smap.find "this" lenv in
+	      comment (" variable de classe "^s)
+	  ++  comment "  récupération de this"
+	  ++  li a0 this
+	  ++  add a0 a0 oreg fp
+	  ++  comment ("  récupération de la variable "^s)
+	  ++  li a1 offset
+	  ++  add a0 a0 oreg a1
+	  ++  push a0
+	else (* Variable globale *)
+	  let lab, _ = try Hashtbl.find genv s with _ -> raise (Error "pas trouvé !") in
+	  comment (" variable globale au label "^lab) 
+	  ++ la a0 alab lab
+	  ++ push a0
+      end
     | Ident s -> 
+      Format.eprintf "Je m'appelle %s et je suis tout-e triste parce que je ne suis pas une référence ! :-(@." s;
       (* Pas la peine de vérifier que ça a été déclaré, on l'a déjà fait *)
       let instruction =
 	if Smap.mem s lenv then (* Variable locale *)
@@ -607,7 +653,7 @@ let compile_decl codefun codemain = function
     nop, nop
   | DeclClass c -> (* On se contente juste d'ajouter la classe dans la table *)
     let newClass = new classObject c.className in
-    newClass#build sizeof;
+    newClass#build (fun (t,_) -> sizeof t);
     Hashtbl.add classTable c.className newClass;
     nop, nop
  
@@ -640,7 +686,8 @@ let compile_decl codefun codemain = function
 	  | Some s, None -> 
 	    (* On ajoute la fonction à la table des fonctions *)
 	    let funLabel = new_label () in
-	    let typList = List.map (fun arg -> arg.varTyp) argList in
+	    let typList = 
+	      List.map (fun arg -> (arg.varTyp, arg.varRef)) argList in
 	    Hashtbl.add functionsTable s (sizeof typ, funLabel, typList);
 	
 	    (* On compile le bloc *)
@@ -668,7 +715,8 @@ let compile_decl codefun codemain = function
 	  (* Méthode met de la classe cla *)
 	  | Some cla, Some met -> (* Méthode *)
 	    (* On récupère son profile *)
-	    let profile = List.map (fun arg -> arg.varTyp) argList in
+	    let profile = 
+	      List.map (fun arg -> (arg.varTyp, arg.varRef)) argList in
 	    (* On initialise le label de la méthode *)
 	    let metLabel = new_label () in
 	    (* On l'ajoute dans la table *)

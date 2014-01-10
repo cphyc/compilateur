@@ -8,15 +8,16 @@ let genv: ((typ*bool) Smap.t) ref = ref Smap.empty
 
 let classExistence: (string, unit) Hashtbl.t = Hashtbl.create 17
 let classInheritances: (string, string) Hashtbl.t = Hashtbl.create 17
-let classFields: (string, string * typ) Hashtbl.t = Hashtbl.create 17
-let classCons: (string, typ list) Hashtbl.t = Hashtbl.create 17
+let classFields: (string, string * (typ * bool)) Hashtbl.t = Hashtbl.create 17
+let classCons: (string, (typ * bool) list) Hashtbl.t = Hashtbl.create 17
 let classMethods: (string, string) Hashtbl.t = Hashtbl.create 17
 
 (*  (class, method), ((class, virtual), (return type, ref)), profile *)
-let methodsTable: (string*string, ((string*bool) * (typ*bool)) * typ list) 
+let methodsTable: 
+    (string*string, ((string*bool) * (typ*bool)) * (typ*bool) list) 
     Hashtbl.t = Hashtbl.create 7
 (* associe à une fonction son type et sa signature *)
-let functionsTable: (string, (typ * bool) * typ list) Hashtbl.t = 
+let functionsTable: (string, (typ * bool) * (typ*bool) list) Hashtbl.t = 
   Hashtbl.create 17
 
 let functionVars: (string, var) Hashtbl.t = Hashtbl.create 17
@@ -52,13 +53,13 @@ let typIn t1 t2 = match t1, t2 with
 (* teste si l1 est un plus petit profil que l2 *)
 let rec leqProf l1 l2 = match l1, l2 with
   | [], [] -> true
-  | t1::q1, t2::q2 -> (typIn t1 t2) && leqProf q1 q2
+  | (t1,b1)::q1, (t2,b2)::q2 -> (typIn t1 t2) && leqProf q1 q2
   | _ -> false
 
 (* teste l egalite entre deux profils *)
 let rec eqProf l1 l2 = match l1, l2 with
   | [], [] -> true
-  | t1::q1, t2::q2 -> (typEq t1 t2) && eqProf q1 q2
+  | (t1,b1)::q1, (t2,b2)::q2 -> (typEq t1 t2) && eqProf q1 q2
   | _ -> false
 
 (* Donne la liste des profils plus grands que *)
@@ -161,7 +162,7 @@ let rec prevent_redeclaration env var = match var.Ast.varCont with
   | Ast.VarPointer v | Ast.VarReference v -> prevent_redeclaration env v
   
 let protoVarTTyper loc = function 
-  | Ast.Qvar (typ, qvar) -> (* Fonction *)
+  | Ast.Qvar (typ, qvar) -> (* Fonction ou méthode *)
     Qvar (qvarTyper typ.Ast.typCont qvar)
   | Ast.Tident s -> Tident s (* Constructeur *)
   | Ast.TidentTident (s,s') -> 
@@ -169,7 +170,8 @@ let protoVarTTyper loc = function
     else raise (Error ("pas un constructeur",loc))
 
 let rec varTyper typ v0 = match v0.Ast.varCont with
-  | Ast.VarIdent s -> { varIdent=s; varRef=false; varTyp=typConverter typ}
+  | Ast.VarIdent s -> 
+    { varIdent=s; varRef=false; varTyp=typConverter typ}
   | Ast.VarPointer v -> 
     let nv = varTyper typ v in
     { varIdent=nv.varIdent; varRef=false; 
@@ -187,9 +189,10 @@ let rec argumentTyper lenv = function
   | arg::alist -> 
     let v = varTyper arg.Ast.argumentTyp.Ast.typCont arg.Ast.argumentVar in
     let t = v.varTyp in
+    let r = v.varRef in
     let nlenv, vlist, tlist = (argumentTyper lenv alist) in
     varUnique arg.Ast.argumentLoc v vlist;
-    (Smap.add v.varIdent (v.varTyp, v.varRef) nlenv), (v::vlist), (t::tlist)
+    (Smap.add v.varIdent (v.varTyp, v.varRef) nlenv), (v::vlist), ((t,r)::tlist)
 
 (* Cette fonction verifie qu'on n'a pas redondance de variable *)
 and varUnique loc v0 = function
@@ -215,13 +218,13 @@ let memberConverter s0 = function
       let l = Hashtbl.find_all classFields s0 in
       if List.mem_assoc v l 
       then raise (Error ("already defined", dv.Ast.declVarsLoc))
-      else Hashtbl.add classFields s0 (v, var.varTyp)
+      else Hashtbl.add classFields s0 (v, (var.varTyp, var.varRef))
     in
     List.iter aux la;
     MemberDeclVars la
   | Ast.VirtualProto (b,p) ->     
     let _, argList, _ = argumentTyper Smap.empty p.Ast.argumentList in
-    let lt = List.map (fun a -> a.varTyp) argList in
+    let lt = List.map (fun a -> (a.varTyp,a.varRef)) argList in
     begin match p.Ast.protoVar with
     | Ast.Qvar (t, q) -> 
       let q' = qvarTyper t.Ast.typCont q in
@@ -241,7 +244,7 @@ let memberConverter s0 = function
     | Ast.Tident s -> 
       if s != s0 then raise (Error ("pas la même classe", p.Ast.protoLoc));
       let _, argList, _ = argumentTyper Smap.empty p.Ast.argumentList in
-      let lt = List.map (fun a -> a.varTyp) argList in
+      let lt = List.map (fun a -> (a.varTyp,a.varRef)) argList in
       let l = Hashtbl.find_all classCons s in
       if List.exists (eqProf lt) l
       then raise (Error ("ce profil a déjà été déclaré", p.Ast.protoLoc));      
@@ -253,24 +256,13 @@ let memberConverter s0 = function
       if (s1 != s2) || (s0 != s1) 
       then raise (Error ("pas la même classe", p.Ast.protoLoc));
       let _, argList, _ = argumentTyper Smap.empty p.Ast.argumentList in
-      let lt = List.map (fun a -> a.varTyp) argList in
+      let lt = List.map (fun a -> (a.varTyp,a.varRef)) argList in
       let l = Hashtbl.find_all classCons s1 in
       if List.exists (eqProf lt) l
       then raise (Error ("ce profil a déjà été déclaré", p.Ast.protoLoc));      
       Hashtbl.add classCons s1 lt;
       VirtualProto (b, {protoVar = Tident s1; argumentList = argList;})
     end
-
-
-
-
-(* let l = Hashtbl.find_all classCons s in *)
-(*     if List.exists (profEq lt) l *)
-(*     then raise (Error ("ce profil a déjà été déclaré", p.Ast.protoLoc)) *)
-(*     else *)
-(*       VirtualProto (b, {protoVar = protoVarTTyper p.Ast.protoVar ; *)
-(* 			argumentList = argList;protoKind = Class }) *)
-
 
 (* =========================TYPAGE DES EXPRESSIONS=========================== *)
 
@@ -302,7 +294,8 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	(* function *)
 	let profList =  Hashtbl.find_all functionsTable s in
 	let argList = List.map (exprTyper lenv) el in
-	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
+	let argTypList = List.map (fun texpr -> (texpr.exprTyp, false)) 
+	  argList in
 	begin
 	  match minProf2 (geqListProf2 argTypList profList) with
 	  | [] -> raise (Error("Aucun profil ne correspond", exp.Ast.exprLoc))
@@ -323,7 +316,8 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	  | _ -> assert false in
 	let surclassList = Hashtbl.find_all classInheritances className in
 	let argList = List.map (exprTyper lenv) el in
-	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
+	let argTypList = 
+	  List.map (fun texpr -> (texpr.exprTyp, texpr.exprTyp)) argList in
 	let profList = List.concat 
 	  (List.map (fun c -> Hashtbl.find_all methodsTable (c,s))
 	  (className::surclassList)) in
@@ -349,7 +343,8 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	then raise (Error(c0^" n'est pas un sous-type de "^c, exp.Ast.exprLoc));
 	let surclassList = Hashtbl.find_all classInheritances c in
 	let argList = List.map (exprTyper lenv) el in
-	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
+	let argTypList = 
+	  List.map (fun texpr -> (texpr.exprTyp, false)) argList in
 	let profList = List.concat 
 	  (List.map (fun c -> Hashtbl.find_all methodsTable (c,s))
 	  (c::surclassList)) in
@@ -373,7 +368,8 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
 	in
 	let surclassList = Hashtbl.find_all classInheritances className in
 	let argList = List.map (exprTyper lenv) el in
-	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
+	let argTypList = 
+	  List.map (fun texpr -> (texpr.exprTyp,false)) argList in
 	
 	let profList = List.concat 
 	  (List.map (fun c -> Hashtbl.find_all methodsTable (c,s))
@@ -395,7 +391,7 @@ let rec exprTyper lenv exp = match exp.Ast.exprCont with
   | Ast.ExprNew (s, el) -> 
     let nel = List.map (exprTyper lenv) el in
     let lprof = Hashtbl.find_all classCons s in
-    let p = List.map (fun e -> e.exprTyp) nel in
+    let p = List.map (fun e -> (e.exprTyp, false)) nel in
     begin
       match minProf (geqListProf p lprof) with
       | [] -> raise (Error ("no profile corresponds", exp.Ast.exprLoc))
@@ -494,7 +490,8 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
       | Ast.ExprQident (Ast.Ident s) when Hashtbl.mem functionsTable s -> 
 	let profList =  Hashtbl.find_all functionsTable s in
 	let argList = List.map (exprTyper lenv) el in
-	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
+	let argTypList = 
+	  List.map (fun texpr -> (texpr.exprTyp, false)) argList in
 	begin
 	  match minProf2 (geqListProf2 argTypList profList) with
 	  | [] -> raise (Error("Aucun profil ne correspond", exp.Ast.exprLoc))
@@ -518,7 +515,8 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
 	  | _ -> assert false in
 	let surclassList = Hashtbl.find_all classInheritances className in
 	let argList = List.map (exprTyper lenv) el in
-	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
+	let argTypList = 
+	  List.map (fun texpr -> (texpr.exprTyp, false)) argList in
 	let profList = List.concat 
 	  (List.map (fun c -> Hashtbl.find_all methodsTable (c,s))
 	  (className::surclassList)) in
@@ -546,7 +544,8 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
 	then raise (Error(c0^" n'est pas un sous-type de "^c, exp.Ast.exprLoc));
 	let surclassList = Hashtbl.find_all classInheritances c in
 	let argList = List.map (exprTyper lenv) el in
-	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
+	let argTypList = 
+	  List.map (fun texpr -> (texpr.exprTyp, false)) argList in
 	let profList = List.concat 
 	  (List.map (fun c -> Hashtbl.find_all methodsTable (c,s))
 	  (c::surclassList)) in
@@ -572,7 +571,8 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
 	in
 	let surclassList = Hashtbl.find_all classInheritances className in
 	let argList = List.map (exprTyper lenv) el in
-	let argTypList = List.map (fun texpr -> texpr.exprTyp) argList in
+	let argTypList = 
+	  List.map (fun texpr -> (texpr.exprTyp, false)) argList in
 	
 	let profList = List.concat 
 	  (List.map (fun c -> Hashtbl.find_all methodsTable (c,s))
@@ -605,14 +605,14 @@ and exprLVTyper lenv exp = match exp.Ast.exprCont with
 	| _ -> assert false
       in
       let ftyp = fieldType exp.Ast.exprLoc cl s in
-      { exprTyp = ftyp; exprCont = ExprQident (rf, Ident s) }
+      { exprTyp = fst ftyp; exprCont = ExprQident (rf, Ident s) }
     else
       raise (Error ("Variable \""^s^"\" non déclarée", exp.Ast.exprLoc))
   | Ast.ExprQident (Ast.IdentIdent (s1, s2)) -> assert false
   | Ast.ExprDot (e, s) ->    
     let ne = exprLVTyper lenv e in
     begin match ne.exprTyp with
-    | TypIdent c -> {exprTyp = fieldType e.Ast.exprLoc c s; 
+    | TypIdent c -> {exprTyp = fst (fieldType e.Ast.exprLoc c s); 
 		      exprCont = ExprDot (ne, s)}
     | _ -> raise (Error ("n'est pas un constructeur", exp.Ast.exprLoc))
     end
@@ -673,7 +673,7 @@ let rec insTyper lenv qv ins = match ins.Ast.insCont with
 	if s != s0 then raise (Error ("pas la meme classe", ins.Ast.insLoc));
 	let nel = List.map (exprTyper lenv) elist in
 	let lprof = Hashtbl.find_all classCons s in
-	let p = List.map (fun e -> e.exprTyp) nel in
+	let p = List.map (fun e -> (e.exprTyp, false)) nel in
 	begin
 	  match minProf (geqListProf p lprof) with
 	  | [] -> raise (Error ("no profile corresponds", ins.Ast.insLoc))
@@ -799,11 +799,8 @@ let declTyper = function
     (* Dans un monde merveilleux, le contexte env renvoie le contexte
        global ajouté aux types de tous les paramètres, ainsi que this si
        nécessaire*)
-
     let env, argList, typList = argumentTyper !genv p.Ast.argumentList in
-    (* On ajoute la valeur de retour dans l'environnement local ce qui permet
-       d'avoir son type *)
-    
+
     let var = protoVarTTyper p.Ast.protoLoc p.Ast.protoVar in
     match p.Ast.protoVar with
     | Ast.Qvar (t,q) -> begin
