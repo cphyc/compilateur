@@ -18,6 +18,9 @@ let methodsTable: (string*string, ((string*bool) * (typ*bool)) * typ list)
 let functionsTable: (string, (typ * bool) * typ list) Hashtbl.t = 
   Hashtbl.create 17
 
+let functionVars: (string, var) Hashtbl.t = Hashtbl.create 17
+
+
 (* Simple fonction effectuant la conversion entre Ast et Tast *)
 let rec typConverter = function
   | Ast.TypVoid -> TypVoid
@@ -627,7 +630,7 @@ let expr_strTyper env = function
 
 (* =========================TYPAGE DES INSTRUCTIONS========================== *)
 
-let rec insTyper lenv return ins = match ins.Ast.insCont with
+let rec insTyper lenv qv ins = match ins.Ast.insCont with
   | Ast.InsSemicolon -> (lenv, InsSemicolon)
   | Ast.InsExpr e -> (lenv, InsExpr (exprTyper lenv e))
   | Ast.InsDef (typ, var, insDef) ->
@@ -636,6 +639,15 @@ let rec insTyper lenv return ins = match ins.Ast.insCont with
     prevent_redeclaration lenv var;
     begin
       let tvar = varTyper typ.Ast.typCont var in
+      begin
+	match qv with
+	| Qvar q ->
+	  begin match q.qvarIdent with
+	  | Ident s -> Hashtbl.add functionVars s tvar
+	  | _ -> ()
+	  end
+	| Tident s -> ()
+      end;
       match insDef with
       | Some Ast.InsDefExpr e -> 
 	let te = 
@@ -673,21 +685,21 @@ let rec insTyper lenv return ins = match ins.Ast.insCont with
 	( Smap.add tvar.varIdent tvar.varTyp lenv), InsDef (tvar, None) 
     end
   | Ast.InsIf (e, i) -> 
-    let _, ni = insTyper lenv return i in
+    let _, ni = insTyper lenv qv i in
     let ne = exprTyper lenv e in
     if not (typEq ne.exprTyp TypInt) then 
       raise (Error ("Pas un type int comme condition", ins.Ast.insLoc));
     lenv, InsIf (ne, ni)
   | Ast.InsIfElse (e, i1, i2) -> 
-    let _, ins1 = insTyper lenv return i1 in
-    let _, ins2 = insTyper lenv return i2 in
+    let _, ins1 = insTyper lenv qv i1 in
+    let _, ins2 = insTyper lenv qv i2 in
     let ne = exprTyper lenv e in
     if not (typEq ne.exprTyp TypInt) then 
       raise (Error ("Pas un type int comme condition", ins.Ast.insLoc));
     lenv,
     InsIfElse (exprTyper lenv e, ins1, ins2)
   | Ast.InsWhile (e, i) -> 
-    let _, ni = insTyper lenv return i in
+    let _, ni = insTyper lenv qv i in
     let ne = exprTyper lenv e in
     if not (typEq ne.exprTyp TypInt) then 
       raise (Error ("Pas un type int comme condition", ins.Ast.insLoc));
@@ -695,7 +707,7 @@ let rec insTyper lenv return ins = match ins.Ast.insCont with
   | Ast.InsFor (el1, eopt, el2, i) -> 
     let nel1 = List.map (exprTyper lenv) el1 in
     let nel2 = List.map (exprTyper lenv) el2 in
-    let _, ni = insTyper lenv return i in
+    let _, ni = insTyper lenv qv i in
     let neopt = match eopt with 
       |None -> {exprTyp = TypInt; exprCont = ExprInt 1 (* = True *)}
       |Some e -> let ne = exprTyper lenv e in
@@ -706,20 +718,20 @@ let rec insTyper lenv return ins = match ins.Ast.insCont with
     in
     lenv, InsFor (nel1, neopt, nel2, ni)
   | Ast.InsBloc b -> 
-    let insList = insListTyper lenv return b.Ast.blocCont in
+    let insList = insListTyper lenv qv b.Ast.blocCont in
     (lenv, InsBloc insList)
   | Ast.InsCout s -> 
     (lenv, InsCout (List.map (expr_strTyper lenv) s))
   | Ast.InsReturn None -> lenv, InsReturn None
   | Ast.InsReturn (Some e) -> 
     let ne, rtyp = 
-      match return with
-      | None -> 
+      match qv with
+      | Tident _ -> 
 	raise (Error ("pas de return dans les constructeurs", ins.Ast.insLoc))
-      | Some (r,rtyp) -> 
-	if r
-	then (exprLVTyper lenv e), rtyp
-	else (exprTyper lenv e), rtyp
+      | Qvar q  -> 
+	if q.qvarRef
+	then (exprLVTyper lenv e), q.qvarTyp
+	else (exprTyper lenv e), q.qvarTyp
     in
     if typIn ne.exprTyp rtyp then
       (lenv, InsReturn (Some ne))
@@ -727,14 +739,16 @@ let rec insTyper lenv return ins = match ins.Ast.insCont with
 
 (* Typage des instructions.
    La fonction type au fur et à mesure les instructions en mettant à jour 
-   l'environnement.
-   sig : env -> Ast.ins list -> Tast.ins *)
-and insListTyper lenv r = function
+   l'environnement. 
+   qvar permet de savoir si l'on a affaire a un cons, une fonction ou une
+   methode et nous donne l'eventuel type de retour.
+   sig : env -> qvar -> Ast.ins list -> Tast.ins *)
+and insListTyper lenv v = function
   | [] -> []
   | ins::insl -> 
     (* Sous fonction qui récupère le nouvel lenv et l'instruction typée *)
-    let nlenv, tIns = insTyper lenv r ins in
-    tIns::(insListTyper nlenv r insl)
+    let nlenv, tIns = insTyper lenv v ins in
+    tIns::(insListTyper nlenv v insl)
 
 
 
@@ -804,7 +818,7 @@ let declTyper = function
 	    ( 
 	      { protoVar = var;
 		argumentList = argList },
-		insListTyper env (Some (q'.qvarRef, t')) b.Ast.blocCont;
+		insListTyper env var b.Ast.blocCont;
 	    )
 	else raise (Error ("la valeur de retour doit être numérique", 
 			   p.Ast.protoLoc))
@@ -815,7 +829,7 @@ let declTyper = function
 	      { protoVar = var;
 		argumentList = argList},	   
 	      insListTyper (Smap.add "this" (TypPointer (TypIdent s1)) env) 
-		(Some (q'.qvarRef, t')) b.Ast.blocCont;
+		var b.Ast.blocCont;
 	    )
 	else raise (Error ("la valeur de retour doit être numérique",
 			   p.Ast.protoLoc))
@@ -826,7 +840,7 @@ let declTyper = function
 	  { protoVar = var ;
 	    argumentList = argList},
 	  insListTyper (Smap.add "this" (TypPointer (TypIdent s)) env) 
-	    None b.Ast.blocCont;
+	    var b.Ast.blocCont;
 	)
     | Ast.TidentTident (s1, s2) -> (* Constructeur *)
       if s1==s2 then
@@ -835,7 +849,7 @@ let declTyper = function
 	  { protoVar = var ;
 	    argumentList = argList },
 	  insListTyper (Smap.add "this" (TypPointer (TypIdent s2)) env) 
-	    None b.Ast.blocCont;
+	    var b.Ast.blocCont;
 	)
       else raise (Error (s2^" n'est pas un constructeur", p.Ast.protoLoc))
 
