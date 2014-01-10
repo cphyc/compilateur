@@ -17,6 +17,9 @@ let (genv : (string, string * int) Hashtbl.t) = Hashtbl.create 17
 let functionsTable: (string, int * string * typ list) Hashtbl.t = 
   Hashtbl.create 17
 
+(* Associe à (classe*méthode)*profile un label *)
+let methodPosition: ((string*string)*typ list, string) Hashtbl.t = Hashtbl.create 17
+
 let print_profile profile = List.iter (fun t -> match t with
   | TypNull -> printf "\t TypeNull@."
   | TypVoid -> printf "\t TypeVoid@."
@@ -37,7 +40,6 @@ class methodObject l r t s v = object (self)
   val virt : bool = v
   method get_profile = profile
   method print_profile = print_profile profile
-
   method get_lab : string = match lab with None -> assert false | Some s -> s
   method set_lab label_creator = match lab with 
   | None -> let newLab = label_creator () in lab <- Some newLab; newLab
@@ -52,118 +54,106 @@ class consObject l t s = object
   method get_lab : text = match lab with None -> assert false | Some s -> label s 
 end
 
-class classObject classTable = object (self)
-  val mutable initCode : text = nop
-  val mutable map : (int*int) Smap.t = Smap.empty
-  val mutable parents : classObject list = []
-  val mutable declClass = {className = ""; supersOpt = None; memberList = []}
+class classObject ident = object (self)
+  val name : string = ident
+  val fields = Hashtbl.find_all Typer.classFields ident
+  val parents = Hashtbl.find_all Typer.classInheritances ident
+  val methods = Hashtbl.find_all Typer.classMethods ident
+  val constructors = Hashtbl.find_all Typer.classCons ident
+  val mutable positionMap = Smap.empty
   val mutable size = 0
-  val mutable methods : methodObject list Smap.t = Smap.empty
-  val mutable cons : consObject list = []
-  method print_methods = 
-    Smap.iter (fun str objList -> List.iter (fun obj -> obj#print_profile) objList)
-      methods
+  val mutable initCode : text = nop
+  method name = name
+  method get_fields = fields
+  method get_parents = parents
+  method get_size = size
+  method set_size s = size <- s 
   method init = initCode
-  method offs_var_map = Smap.map (fun (a,_) -> a) map
-  method size = size
-  method decl = declClass
-  method offset s = fst (Smap.find s map)
-  method add_method str m =
-    (* On veut ajouter une méthode : 
-       on récupère la liste des méthodes de memes nom *)
-    let mList = try Smap.find str methods with 
-	Not_found -> [] in
-    (* On lui ajoute la méthode m *)
-    let list = m :: mList in
-    (* On sauvegarde dans methods *)
-    methods <- Smap.add str list methods
-  method add_method_label str profile label_creator =
-    (* On récupère la méthode associée *)
-    (* print_string ("Recherche de "^str^" :" );print_profile profile; printf "@."; *)
-    let met = match self#get_method str profile with 
-      | None -> assert false
-      | Some m -> m in
-    (* On lui demande créer un nouveau label *)
-    met#set_lab label_creator;
-  method get_method str profile = (* On commence par chercher dans la classe, sinon
-				     on explore les supers *)
-    (* On récupère la liste des méthodes dont le nom est str *)
-    try let metList = Smap.find str methods in
-	(* Dans cette liste, y a t-il une methode qui a le bon profil ? *)
-	Some (List.find (fun met -> eq_profile met#get_profile profile) metList)
-    with Not_found -> 
-      (* On explore tous les supers jusqu'à trouver la bonne *)
-      try let dadysClass = 
-	    (List.find (fun classObj -> 
-	      match classObj#get_method str profile with
-	      | None -> false 
-	      | Some met -> true) parents) 
-	  in
-	  dadysClass#get_method str profile
-      with Not_found -> None
-  method add_cons str consObj = cons <- consObj :: cons
-  method build c =
-    let rec sizeof = function
-      | TypNull -> assert false
-      | TypVoid -> 4 
-      | TypInt -> 4
-      | TypIdent s -> (Hashtbl.find classTable s)#size
-      | TypPointer t -> sizeof t
+  method map =
+    Smap.iter (fun name (size,pos) -> print_string (name^" - size: "); print_int size;
+      print_string "  pos: "; print_int pos; printf "@.";) positionMap; positionMap
+  method no_size_map = Smap.map (fun (size,position) -> position) positionMap
+  (* method offs_var_map = Smap.map (fun (a,_) -> a) map *)
+  (* method offset s = fst (Smap.find s map) *)
+  (* method add_method str m = *)
+  (*   (\* On veut ajouter une méthode :  *)
+  (*      on récupère la liste des méthodes de memes nom *\) *)
+  (*   let mList = try Smap.find str methods with  *)
+  (* 	Not_found -> [] in *)
+  (*   (\* On lui ajoute la méthode m *\) *)
+  (*   let list = m :: mList in *)
+  (*   (\* On sauvegarde dans methods *\) *)
+  (*   methods <- Smap.add str list methods *)
+  (* method add_method_label str profile label_creator = *)
+  (*   (\* On récupère la méthode associée *\) *)
+  (*   (\* print_string ("Recherche de "^str^" :" );print_profile profile; printf "@."; *\) *)
+  (*   let met = match self#get_method str profile with  *)
+  (*     | None -> assert false *)
+  (*     | Some m -> m in *)
+  (*   (\* On lui demande créer un nouveau label *\) *)
+  (*   met#set_lab label_creator; *)
+  (* method get_method str profile = (\* On commence par chercher dans la classe, sinon *)
+  (* 				     on explore les supers *\) *)
+  (*   (\* On récupère la liste des méthodes dont le nom est str *\) *)
+  (*   try let metList = Smap.find str methods in *)
+  (* 	(\* Dans cette liste, y a t-il une methode qui a le bon profil ? *\) *)
+  (* 	Some (List.find (fun met -> eq_profile met#get_profile profile) metList) *)
+  (*   with Not_found ->  *)
+  (*     (\* On explore tous les supers jusqu'à trouver la bonne *\) *)
+  (*     try let dadysClass =  *)
+  (* 	    (List.find (fun classObj ->  *)
+  (* 	      match classObj#get_method str profile with *)
+  (* 	      | None -> false  *)
+  (* 	      | Some met -> true) parents)  *)
+  (* 	  in *)
+  (* 	  dadysClass#get_method str profile *)
+  (*     with Not_found -> None *)
+  method build sizeof =
+    (* On construit la table des méthodes virtuelles *)
+    (* TODO : allouer mémoire pour les méthodes virtuelles *)
+    
+    let rec explore first_free classe_name = 
+      let parents = Hashtbl.find_all Typer.classInheritances classe_name in
+      let fields = Hashtbl.find_all Typer.classFields classe_name in
+      (* tant qu'il reste des parents, on les explore *)
+      let rec explore_parent first_free = function 
+	| [] -> 0, Smap.empty
+	| parent::list -> (* On alloue de la place pour le parent, puis on explore le reste *)
+	  let offset, map = explore first_free parent in
+	  let ending_offset, map' = explore_parent offset list in
+	  (* On fusionne les deux maps *)
+	  ending_offset, Smap.fold Smap.add map map'
+      in		  
+      let rec add_fields allocated_map first_free = function
+	| [] -> first_free, allocated_map
+	| (name, typ)::list -> (* On recherche dans la map si on n'a pas déjà ajouté le champ, sinon on
+				  le fait *)
+	  let size = sizeof typ in
+	  let new_first_free = first_free + size in
+	  if Smap.mem name allocated_map then
+	    first_free, allocated_map 
+	  else
+	    let finally_free, map = add_fields allocated_map new_first_free list in
+	    finally_free, Smap.add name (size, first_free) map
+      in
+      (* On explore effectivement les parents *)
+      let offset, parent_map = explore_parent first_free parents in
+      (* On ajoute alors les champs en prenant comme point de départ parent_map *)
+      add_fields parent_map offset fields
+      
     in
-    (* Construit l'environnement, le code d'initialisation, calcul la taille et 
-       renvoie le tout *)
-    (* On s'occupe des supers *)
-    let rec supersRunner env = function
-      | None -> Smap.empty
-      | Some super -> assert false
-    in
-    let superEnv = supersRunner Smap.empty c.supersOpt in
-       
-    (* À l'aide de cet env, on s'occupe des membres *)
-    let rec memberListRunner env = function
-      | [] -> env
-      | member::mlist -> ( match member with
-	| MemberDeclVars dv -> 
-	  (* On ajoute tous les copaines à l'environnement *)
-	  List.fold_left (fun env var ->
-	    Smap.add var.varIdent (sizeof var.varTyp) env)
-	    (memberListRunner env mlist) dv
-	| VirtualProto (virt, proto) -> 
-	  (* On calcule son profile *)
-	  let profile = 
-	    List.map (fun arg -> arg.varTyp) proto.argumentList 
-	  in
-	  (* ____ récupérer de chez ken *)
-	  let _ =  match proto.protoVar with
-	  | Qvar qvar -> ( match qvar.qvarIdent with
-	    | Ident s ->
-	      let is_ref = qvar.qvarRef in
-	      let typ = qvar.qvarTyp in
-	      (* On a un constructeur, on l'ajoute à la liste *)
-	      self#add_cons s (new consObject None typ profile);
-	    | _ -> assert false )
-	  | Tident s -> assert false 
-	  in
-	  (* On continue à traiter mlist *)
-	  memberListRunner env mlist
-      )
-    in 
-    let memberListEnv = memberListRunner superEnv c.memberList in
-       
-    (* On transforme l'environnement donnant les tailles en un environnement donnant
-       la position par rapport au début ET les tailles*)
-    let first_free, offsEnv = Smap.fold (fun ident size (first_free, offsMap) -> 
-      (first_free + size),
-      Smap.add ident (first_free, size) offsMap) memberListEnv (0, Smap.empty)
-    in
-    (* On sauvegarde le tout en appelant éventuellement le constructeur (TODO)*)
-    initCode <- Smap.fold (fun ident size code -> 
-      code 
-      ++  comment ("Membre "^ident)
-      ++  pushn size) memberListEnv nop;
-    map <- offsEnv;
-    declClass <- c;
-    size <- first_free;
+    let size, map = explore 0 self#name in
+    positionMap <- map;
+    self#set_size size;
+    (* (\* On créée le code d'initialisation d'une classe *\) *)
+    (* let code =  *)
+    (* initCode <- Smap.fold (fun ident size code ->  *)
+    (*   code  *)
+    (*   ++  comment ("Membre "^ident) *)
+    (*   ++  pushn size) memberListEnv nop; *)
+    (* map <- offsEnv; *)
+    (* declClass <- c; *)
+    (* size <- first_free; *)
 end
 (* Une classe : une déclaration, une map des tailles*positions, un code 
    d'initialisation, une taille *)
@@ -188,7 +178,7 @@ let rec sizeof = function
 | TypNull -> 4
 | TypVoid -> 0 
 | TypInt -> 4
-| TypIdent s -> (Hashtbl.find classTable s)#size
+| TypIdent s -> (Hashtbl.find classTable s)#get_size
 | TypPointer t -> 4
  
 let save_fp_ra = 
@@ -273,8 +263,8 @@ let rec compile_LVexpr lenv cenv = function
     compile_expr e lenv cenv 
   | ExprDot (e,s) -> 
     (match e.exprTyp with 
-    | TypIdent c -> (* On un directement une classe *)
-      let offset = (Hashtbl.find classTable c)#offset s in
+    | TypIdent c -> (* On a une classe *)
+      let _, offset = Smap.find s (Hashtbl.find classTable c)#map in
           comment (" Variable de class "^s)
       ++  compile_LVexpr lenv cenv e.exprCont
       ++  pop a0              (* on a l'adresse % fp, et l'offset *)
@@ -323,7 +313,7 @@ and compile_expr ex lenv cenv = match ex.exprCont with
 			calcul l'offset de s *)
     (match e.exprTyp with 
     | TypIdent c -> 
-      let offset = (Hashtbl.find classTable c)#offset s in
+      let _, offset = Smap.find s (Hashtbl.find classTable c)#map in
           comment (" Variable de class "^s)
       ++  compile_LVexpr lenv cenv e.exprCont
       ++  pop a0              (* on a l'adresse % fp, et l'offset *)
@@ -365,12 +355,8 @@ and compile_expr ex lenv cenv = match ex.exprCont with
       (* let get_e_address = compile_LVexpr lenv cenv e.exprCont ++ pop a0 in *)
       (* On trouve la classe grace au type *)
       let className = match e.exprTyp with | TypIdent s -> s | _ -> assert false in
-      (* On a la classe, on cherche alors le code de la méthode *)
-      let classObj = Hashtbl.find classTable className in
-      let metObject = match classObj#get_method s p with 
-	| None -> assert false | Some m -> m in
-      (* let offs_var_map = classObj#offs_var_map  in *)
-      let metLab = metObject#get_lab in
+      (* On récupère directement le label de la méthode *)
+      let metLab = Hashtbl.find methodPosition ((className, s), p) in
       (* On compile la pile d'argument *)
       let codeArgs = 
 	List.fold_right 
@@ -593,8 +579,8 @@ let compile_decl codefun codemain = function
     process vlist;
     nop, nop
   | DeclClass c -> (* On se contente juste d'ajouter la classe dans la table *)
-    let newClass = new classObject classTable in
-    newClass#build c;
+    let newClass = new classObject c.className in
+    newClass#build sizeof;
     Hashtbl.add classTable c.className newClass;
     nop, nop
  
@@ -656,28 +642,24 @@ let compile_decl codefun codemain = function
 	  | Some cla, Some met -> (* Méthode *)
 	    (* On récupère son profile *)
 	    let profile = List.map (fun arg -> arg.varTyp) argList in
-	    (* On récupère la classe *)
-	    let classObj = Hashtbl.find classTable cla in
 	    (* On initialise le label de la méthode *)
-	    let metLabel = classObj#add_method_label met profile new_label in
+	    let metLabel = new_label () in
+	    (* On l'ajoute dans la table *)
+	    Hashtbl.add methodPosition ((cla,met),profile) metLabel;
 	    (* On produit alors le code *)
 	    (* On créée l'environnement liée à la classe.
 	       nb : on a this dans les arguments ! *)
-	    let classEnv = classObj#offs_var_map in
+	    let classEnv = (Hashtbl.find classTable cla)#no_size_map in
 	    (* Mise à jour de l'env *)
 	    let tempEnv = allocate_args true argList in
 	    let metEnv = Smap.add "this" 0 tempEnv in
 	    (* Code de la méthode *)
-	    let aux (code, lenv) ins = 
-	      let inscode, nlenv = compile_ins lenv classEnv 8 ins in
-	      code ++ inscode, nlenv
-	    in
 	    let metCode, _ = List.fold_left 
 	      (fun (code, lenv) ins -> 
 		let inscode, nlenv = compile_ins lenv classEnv 8 ins in
 		code ++ inscode, nlenv) (nop, metEnv) b
 	    in   
-	    let codeFun = 
+	    let new_codefun = 
 	          codefun
 	      ++  comment (" méthode "^met^" de la classe "^cla)
 	      ++  label metLabel
@@ -686,7 +668,7 @@ let compile_decl codefun codemain = function
 	      ++  restore_ra_fp
 	      ++  comment " retour à la case départ"
 	      ++  jr ra in
-	    codefun, codemain
+	    new_codefun, codemain
 	  | _, _ -> assert false
 	)
       | Tident s -> assert false
