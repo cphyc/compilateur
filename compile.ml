@@ -448,6 +448,10 @@ and compile_expr lenv cenv ex = match ex.exprCont with
       let size, funlab, typList = 
 	List.find (fun (s, l, tl) -> eq_profile tl p)
 	  (Hashtbl.find_all functionsTable s) in
+      let rec sizeArg = function
+	| [] -> 0
+	| (t,r)::l -> (sizeof r t) + sizeArg l
+      in
       let rec codeArgs prof exprl = match (prof, exprl) with
 	| [], [] -> nop
 	| (_,rf)::prof', e::exprl' ->
@@ -462,6 +466,7 @@ and compile_expr lenv cenv ex = match ex.exprCont with
       ++  (codeArgs p l)
       ++  save_fp_ra
       ++  jal funlab
+      ++  sub sp sp oi (sizeArg typList)
       ++  restore_ra_fp
       ++  comment "  on met le résultat sur la pile"
       ++  push v0
