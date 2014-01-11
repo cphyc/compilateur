@@ -120,14 +120,14 @@ class classObject ident = object (self)
       ++  comment "  on restaure fp, ra"
       ++  restore_ra_fp
   method assoc =
-    List.iter (fun (name, (size,pos)) ->
-      print_string (name^" - size: "); print_int size;
-      print_string "  pos: "; print_int pos; printf "@.";) positionList;
+    (* List.iter (fun (name, (size,pos)) -> *)
+    (*   print_string (name^" - size: "); print_int size; *)
+    (*   print_string "  pos: "; print_int pos; printf "@.";) positionList; *)
     positionList 
   method no_size_map = 
-    List.iter (fun (name, (size,pos)) ->
-      print_string (name^" - size: "); print_int size;
-      print_string "  pos: "; print_int pos; printf "@.";) positionList;
+    (* List.iter (fun (name, (size,pos)) -> *)
+    (*   print_string (name^" - size: "); print_int size; *)
+    (*   print_string "  pos: "; print_int pos; printf "@.";) positionList; *)
     List.map (fun (string,(size,position)) -> string,position) positionList
   method build sizeof =
     let rec explore first_free classe_name = 
@@ -341,8 +341,9 @@ let rec compile_LVexpr lenv cenv ex = match ex.exprCont with
       ++  restore_ra_fp
       ++  comment "  on met le résultat sur la pile"
       ++  to_push_or_not_to_push
+    | _ -> assert false
   )
-  | ExprQident (rf, q) -> begin match q with
+  | ExprQident (rf, q) -> ( match q with
     | Ident s when rf -> (* Référence vers variable de classe *)
       (* Lâche copier-coller *)
       let instruction =
@@ -364,8 +365,8 @@ let rec compile_LVexpr lenv cenv ex = match ex.exprCont with
       ++ push a0      
     | Ident s -> (* Variable de classe *)
       begin
-	let _ = List.iter (fun (name,pos) ->
-	  print_string (name^" - pos: "); Format.print_int pos; printf "@.";) cenv in
+	(* let _ = List.iter (fun (name,pos) -> *)
+	(*   print_string (name^" - pos: "); Format.print_int pos; printf "@.";) cenv in *)
 	if Smap.mem s lenv then (* Variable locale *)
 	  let pos = Smap.find s lenv in 
 	       comment (" variable locale "^s) 
@@ -385,9 +386,9 @@ let rec compile_LVexpr lenv cenv ex = match ex.exprCont with
 	  comment (" variable globale au label "^lab) 
 	  ++ la a0 alab lab
 	  ++ push a0
-      end
+      end    
     | IdentIdent (s1, s2) -> assert false
-  end
+  )
   | ExprStar e -> 
     compile_expr lenv cenv e 
   | ExprDot (e,s) -> 
@@ -440,8 +441,8 @@ and compile_expr lenv cenv ex = match ex.exprCont with
       ++ push a0
     | Ident s -> 
       (* Pas la peine de vérifier que ça a été déclaré, on l'a déjà fait *)
-      let _ = List.iter (fun (name,pos) ->
-	print_string (name^" - pos: "); Format.print_int pos; printf "@.";) cenv in
+      (* let _ = List.iter (fun (name,pos) -> *)
+      (* 	print_string (name^" - pos: "); Format.print_int pos; printf "@.";) cenv in *)
       let instruction =
 	if Smap.mem s lenv then (* Variable locale *)
 	  let offset = Smap.find s lenv in
@@ -813,7 +814,6 @@ let compile_decl codefun codemain = function
       | Qvar qvar ->
 	let typ = qvar.qvarTyp in
 	let ident = funQvar_to_ident qvar in
-	let by_ref = qvar.qvarRef in
 	(
 	  (* ident est soit un string tout seul (une fonction),
 	     soit un couple de string (methode ou cons) *)
