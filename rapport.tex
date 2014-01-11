@@ -1,65 +1,56 @@
 \documentclass{article}
 \usepackage[utf8]{inputenc}
 \usepackage[francais]{babel}
-\title{Compilateur MiniC++ - analyseur syntaxique et analyseur grammatical}
+\title{Compilateur \texttt{MiniC++}}
 \author{Corentin Cadiou, Ken Chanseau Saint-Germain}
 \date{29 novembre 2013}
 \begin{document}
 \maketitle
-\section*{Compiler le fichier}
-Pour compiler le projet, la commande \texttt{make} réalise
-automatiquement cette tâche. Elle créée un binaire \texttt{minic++}
-dans le répertoire local. Pour nettoyer le répertoire local des
-fichiers compilés et des fichiers temporaires, utiliser \texttt{make clean}.
+Lors de ce projet, nous avons eu à réaliser un compilateur pour un
+sous-ensemble de C++, appelé MiniC++.
 
-Le binaire, qui est la première moitié du compilateur, réalise
-l'analyse syntaxique et lexicale du fichier passé en argument. La
-syntaxe d'utilisation de \texttt{minic++} est : \texttt{\$./minic++
-  fichier-a-compiler.cpp}. Le compilateur ne renvoie rien dans le cas
-d'une analyse syntaxique et lexicale sans erreur. Si une erreur est
-détectée, la compilation s'arrête et renvoie un code d'erreur avec une
-indication de la position de l'erreur.
+\section*{Compte-rendu des fonctions du compilateur}
+Les analyses lexicale, sémantique et de type ont un comportement
+correct vis-à-vis des conventions de MiniC++.
 
-\section*{Réalisation du projet}
-Le compilateur a été réalisé en OCaml et utilise le générateur
-d'analyseur syntaxique \texttt{ocamllex} (lexer) et l'analyseur grammatical
-\texttt{menhir} (parser).
-
-Le parser traduit les règles de syntaxe du langage en une fonction
-qui prend un tampon d'analyse lexicale (ici, les caractères d'un
-fichier) et renvoie une liste de jetons (tokens). Pour distinguer les
-identificateurs des mots-clés et des identificateurs de classe, on
-utilise une table de hachage contenant les mots-clés (keywords) et les
-identificateurs de classe (tident).
-
-L'analyseur grammatical (parser) traduit les règles de grammaire en
-une fonction qui à un lexeur associe un arbre de syntaxe
-abstraite. Notre analyseur grammatical utilise le module du lexeur
-directement. On peut ainsi modifier dans le parseur la liste
-des identificateurs de classe et réaliser le \emph{lexer hack}.
-
-De plus, le parseur a résolu ses problèmes d'expansion/réduction
-(shift/reduction) sur les opérateurs unaires en créant un jeton
-abstrait de précédence différente et en utilisant le mot-clé
-\texttt{\%prec} pour indiquer que les opérateurs unaires n'ont pas la
-même précédence que les opérateurs binaires. De même, cette méthode a
-été utilisée pour gérer la structure \texttt{if ... else ...}
-\emph{via} un jeton abstrait \texttt{then}.
-\pagebreak
-\section*{Fichiers}
-Le projet utilise les fichiers suivants :
+Pour la production de code, notre compilateur a le comportement attendu pour :
 \begin{itemize}
-  \item \texttt{main.ml} : fichier principal qui ouvre le fichier à
-    compiler et manipule le lexeur et le parseur;
-  \item \texttt{lexer.mll} : règles de syntaxe utilisées par \texttt{ocamllex} pour
-    compiler l'analyseur syntaxique;
-  \item \texttt{parser.mly} : règles de grammaire et construction de l'arbre de
-    syntaxe abstraite à l'aide de l'outil Menhir;
-  \item \texttt{tokens.mly} : liste de jetons (tokens) utilisés par le parseur;
-  \item \texttt{ast.mli} : structure de l'arbre de syntaxe abstraite;
-  \item \texttt{Makefile} : fichier gérant la compilation, supporte les
-    arguments \texttt{all} (optionnel) pour compiler Minic++ et \texttt{clean} pour
-    nettoyer le répertoire des fichiers temporaires créés lors de la compilation.
+\item l'affichage;
+\item l'arithmétique;
+\item les variables locales (le test \texttt{while.cpp} échoue, cela vient
+  d'une mauvais allocation de la mémoire);
+\item les pointeurs;
 \end{itemize}
-  
+
+Notre compilateur a un comportement acceptable mais parfois buggué
+avec :
+\begin{itemize}
+\item les fonctions :
+  \begin{itemize}
+    \item empilement et recherche correcte des arguments;
+    \item valeur de retour;
+    \item dépilement correct, mais parfois \texttt{\$sp} ne revient pas à l'endroit attendu;
+  \end{itemize}
+\item les références :
+  \begin{itemize}
+  \item quelques problèmes sûrement en rapport avec les fonctions;
+  \item gestion correcte du référencement et du déréferencement;
+  \end{itemize}
+\item les objets :
+  \begin{itemize}
+    \item gestion correcte de l'allocation en mémoire, y compris pour
+      les classes héritées;
+    \item gestion correcte de la recherche de méthode (statique) et de
+      constructeur;
+    \item quelques problèmes d'accès aux champs, car les variables
+      locales sont mal stockées : il semblerait qu'elles aient été
+      stockées dans le mauvais sens (pas en descandant sur la pile
+      mais en montant);
+    \item pas de gestion des méthodes virtuelles, mais héritage des
+      classes des parents;
+  \end{itemize}
+\end{itemize}
+
+\emph{NB : on compilera avec amusement un programme qui nécessite
+  d'utiliser une cinquantaine de label.}
 \end{document}
