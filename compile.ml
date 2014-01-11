@@ -306,6 +306,43 @@ let funQvar_to_ident q = match q.qvarIdent with
 
 (******************** Compilation ********************)
 let rec compile_LVexpr lenv cenv ex = match ex.exprCont with
+  | ExprApply (e, p, l) -> (  
+    match e.exprCont with
+    | ExprQident (rf, Ident s) -> (* appel de fonction *)
+      (* On recherche le profil correspondant *)
+      let size, funlab, typList = 
+	List.find (fun (s, l, tl) -> eq_profile tl p)
+	  (Hashtbl.find_all functionsTable s) in
+      let rec sizeArg = function
+	| [] -> 0
+	| (t,r)::l -> (sizeof r t) + sizeArg l
+      in
+      let rec codeArgs prof exprl = match (prof, exprl) with
+	| [], [] -> nop
+	| (_,rf)::prof', e::exprl' ->
+	  let code = codeArgs prof' exprl' in
+	  if rf 
+	  then code ++ (compile_LVexpr lenv cenv e)
+	  else code ++ (compile_expr lenv cenv e)
+	| _ -> assert false
+      in
+      let to_push_or_not_to_push = 
+	if Typer.typEq e.exprTyp TypVoid then
+	  nop
+	else push v0
+      in
+          comment (" appel de la fonction "^s)
+      ++  comment "  construction de la pile"
+      ++  codeArgs p l
+      ++  save_fp_ra
+      ++  comment " saut vers la fonction"
+      ++  jal funlab
+      ++  comment " on est revenu, on dépile par rapport à l'ancien fp"
+      ++  add sp fp oi (sizeArg typList)
+      ++  restore_ra_fp
+      ++  comment "  on met le résultat sur la pile"
+      ++  to_push_or_not_to_push
+  )
   | ExprQident (rf, q) -> begin match q with
     | Ident s when rf -> 
       (* Lâche copier-coller *)
@@ -413,7 +450,8 @@ and compile_expr lenv cenv ex = match ex.exprCont with
 	  ++  comment " chargement de la variable"
 	  ++  lw a0 areg (var_offset, a0)
 	else
-	  let lab, _ = try Hashtbl.find genv s with _ -> raise (Error ("pas trouvé "^s)) in 
+	  let lab, _ = try Hashtbl.find genv s with _ -> 
+	    raise (Error ("pas trouvé "^s)) in 
 	  lw a0 alab lab
       in
       comment (" chargement variable "^s) ++ instruction
@@ -444,7 +482,7 @@ and compile_expr lenv cenv ex = match ex.exprCont with
     ++ comment " calcul de la valeur droite" ++ compile_expr lenv cenv e2
     ++ pop a1 ++ pop a0 
     ++ comment " sauvegarde de la valeur" ++ sw a1 areg (0, a0)
-  | ExprApply (e, p, l) -> ( 		(* cadeau : p profil cherché *)
+  | ExprApply (e, p, l) -> (  
     match e.exprCont with
     | ExprQident (rf, Ident s) -> (* appel de fonction *)
       (* On recherche le profil correspondant *)
@@ -702,16 +740,17 @@ let rec compile_ins lenv cenv sp = function
     let inscode, nlenv = (List.fold_left aux (nop, lenv) l) in
     let comm = comment " cout" in
     comm ++ inscode, nlenv
-  | InsReturn eopt -> 
+  | InsReturn (rf, eopt) -> 
     let expr = match eopt with 
-      | Some e -> compile_expr lenv cenv e
+      | Some e -> 
+	if rf
+	then compile_LVexpr lenv cenv e
+	else compile_expr lenv cenv e
       | None -> nop 
     in
         expr
     ++  comment " quitte la fonction, résultat dans v0"
-    ++  pop v0
-    ++  restore_ra_fp
-    ++  jr ra, lenv
+    ++  pop v0, lenv
 		 
 let compile_decl codefun codemain = function
   | DeclVars vlist -> 
@@ -737,7 +776,6 @@ let compile_decl codefun codemain = function
 	let typ = qvar.qvarTyp in
 	let ident = funQvar_to_ident qvar in
 	let by_ref = qvar.qvarRef in
-	assert (not by_ref);
 	(
 	  (* ident est soit un string tout seul (une fonction),
 	     soit un couple de string (methode ou cons) *)
