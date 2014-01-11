@@ -660,7 +660,7 @@ let rec compile_ins lenv cenv sp = function
     let nlenv = allocate_var v lenv in
     let rhs = match option with
       | None -> pushn 4
-      | Some InsDefExpr e -> compile_LVexpr nlenv cenv e
+      | Some InsDefExpr e -> compile_expr nlenv cenv e
       | Some InsDefIdent (c, elist) -> (* Appel du constructeur *)
 	let tlist = List.map (fun e -> e.exprTyp, false) elist in
 	let plist = Hashtbl.find_all Typer.classCons c in
@@ -686,7 +686,7 @@ let rec compile_ins lenv cenv sp = function
       let nlenv = allocate_var v lenv in
       let rhs = match option with
 	| None -> pushn 4
-	| Some InsDefExpr e -> compile_LVexpr nlenv cenv e
+	| Some InsDefExpr e -> compile_expr nlenv cenv e
 	| Some InsDefIdent (c, elist) -> (* Appel du constructeur *)
 	  let tlist = List.map (fun e -> e.exprTyp, false) elist in
 	  let plist = Hashtbl.find_all Typer.classCons c in
