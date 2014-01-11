@@ -26,17 +26,6 @@ let consPosition: ((string)*(typ*bool) list, string) Hashtbl.t = Hashtbl.create 
 (* Tables des méthodes virtuelles du segment de donnée *)
 (* classe, (liste des méthodes*position dans la vm)*label *)
 let virtualMethodTable: (string, (string*int) list*string) Hashtbl.t = Hashtbl.create 7
-let save_fp_ra = 
-      comment " sauvegarde de fp" 
-  ++  push fp
-  ++  comment " sauvegarde de ra"
-  ++  push ra
-let restore_ra_fp = 
-      comment " restauration de ra"
-  ++  lw ra areg (-8, fp) 
-  ++  comment " restauration de fp"
-  ++  lw fp areg (-4, fp)
-
 
 let print_profile profile = List.iter (fun t -> match t with
   | TypNull -> printf "\t TypeNull@."
@@ -64,14 +53,13 @@ class methodObject l r t s v = object (self)
   val typ : typ = t
   val profile : (typ*bool) list = s
   val virt : bool = v
-end
+  end
 
-class consObject ofClass p = object
-  val parentClass = ofClass
-  val lab:string = new_label ()
+class consObject l t p = object
+  val lab:string = l
+  val typ:typ = t
   val profile:(typ*bool) list = p
   val mutable code : text option = None
-  method label = lab
   method profile = p
   method code = code
 end
@@ -84,14 +72,14 @@ class classObject ident = object (self)
   val parents = Hashtbl.find_all Typer.classInheritances ident
   val methods = Hashtbl.find_all Typer.classMethods ident
   val constructors = Hashtbl.find_all Typer.classCons ident
-  val mutable positionList = []
+  val mutable positionMap = Smap.empty
   val mutable size = 0
   method name = name
   method get_fields = fields
   method get_parents = parents
   method size = size
   (* Appelle le constructeur correspondant et tous les autres *)
-  method init (profile : (Tast.typ * bool) list) (argCode:text) (argSize:int)= 
+  method init (profile : (Tast.typ * bool) list) = 
     (* Si on a défini un constructeur, on n'en a pas par défaut *)
     match Hashtbl.find_all consTable self#name with
     | [] -> (* Aucun constructeur, on renvoie le code par défaut, càd rien *)
@@ -101,32 +89,18 @@ class classObject ident = object (self)
       ++  comment " constructeur par défaut : appel des supers constructeurs en chaine"
       ++  superConstructor
     | consList -> (* Il y en a, on cherche le bon (n'échoue pas) *)
-      let constructor = List.find 
-	(fun consObj -> eq_profile profile consObj#profile) consList in
-          comment " appel d'un constructeur personnalisé"
-      ++  comment "  allocation de mémoire"
-      ++  pushn self#size
-      ++  comment "  compilation des arguments"
-      ++  argCode
-      ++  comment "  on récupère this qu'on met en tete de pile"
-      ++  add a0 sp oi (self#size-4+4*argSize)
-      ++  push a0
-      ++  comment "  on sauvegarde ra, fp"
-      ++  save_fp_ra
-      ++  comment "  fp est à 8 de sp"
-      ++  add fp sp oi 8
-      ++  comment "  on jump"
-      ++  jal constructor#label
-      ++  comment "  on restaure fp, ra"
-      ++  restore_ra_fp
-  method assoc =
-    List.iter (fun (name, (size,pos)) ->
-      print_string (name^" - size: "); print_int size;
-      print_string "  pos: "; print_int pos; printf "@.";) positionList;
-    positionList 
-  method no_size_map = 
-    List.map (fun (string,(size,position)) -> string,position) positionList
-  method build sizeof =
+      let constructor = List.find (fun consObj -> eq_profile profile consObj#profile) consList in
+      match constructor#code with None -> assert false | Some code -> 
+	    comment (" appel d'un constructeur personnalisé:allocation 
+                       de mémoire puis exécution du code")
+	++  pushn size 
+	++  code
+  method map =
+    (* Smap.iter (fun name (size,pos) -> print_string (name^" - size: "); print_int size; *)
+    (*   print_string "  pos: "; print_int pos; printf "@.";) positionMap; *)
+    positionMap 
+  method no_size_map = Smap.map (fun (size,position) -> position) positionMap
+   method build sizeof =
   (*   (\* On construit les tables des méthodes virtuelles *\) *)
   (*   let build_vb class_name =  *)
   (*     (\* On récupère toutes les méthodes de la classe *\) *)
@@ -164,52 +138,58 @@ class classObject ident = object (self)
       let fields = Hashtbl.find_all Typer.classFields classe_name in
       (* tant qu'il reste des parents, on les explore *)
       let rec explore_parent first_free = function 
-	| [] -> first_free, []
-	| parent::parentList -> (* On alloue de la place pour le parent, 
+	| [] -> first_free, Smap.empty
+	| parent::list -> (* On alloue de la place pour le parent, 
 			     puis on explore le reste *)
 	  (* let _ = print_string ("Exploration de parent "^parent); printf "@." in *)
 	  (* On créée la table des méthodes virtuelles de la classe *)
 	  (* let () = build_vb parent in *)
-	  let offset, list = explore first_free parent in
-	  let ending_offset, list' = explore_parent offset parentList in
+	  let offset, map = explore first_free parent in
+	  let ending_offset, map' = explore_parent offset list in
 	  (* On fusionne les deux maps *)
 	  (* let _ = print_string ("Fin de l'exploration de "^parent);printf "@." in *)
 	  (* On ajoute un petit label à l'endroit où est ajoutée la classe pour s'y
 	     retrouver :D *)
-	  let listWithLabelIsTotallyCool = (parent, ((sizeof false (TypIdent parent)), 
-							   first_free)) :: list' in
+	  let mapWithLabelIsTotallyCool = Smap.add parent (sizeof false (TypIdent parent), 
+							   first_free) map' in
 
-	  ending_offset, list@listWithLabelIsTotallyCool
+	  ending_offset, Smap.fold Smap.add map mapWithLabelIsTotallyCool
       in		  
-      let rec add_fields allocated_list first_free = function
-	| [] -> first_free, allocated_list
-	| (name, (typ,b))::list -> 
-	  (* On recherche dans la liste si on n'a pas déjà ajouté le champ, 
-	     sinon on le fait *)
-	  if List.mem_assoc name allocated_list then
+      let rec add_fields allocated_map first_free = function
+	| [] -> first_free, allocated_map
+	| (name, (typ,b))::list -> (* On recherche dans la map si on n'a pas déjà ajouté le champ, 
+				      sinon on le fait *)
+	  if Smap.mem name allocated_map then
 	    (* let _ = printf "Ach nein !@." in *)
-	    first_free, allocated_list 
+	    first_free, allocated_map 
 	  else
 	    (* On récupère la taille, on calcule le nouvel emplacement disponible *)
 	    let size = sizeof b typ in
 	    (* let _ = print_string (name^" "); print_int first_free; printf "\t" in *)
-	    (* On pose la variable, donc le nouveau libre est un plus haut *)
 	    let new_first_free = first_free + size in
-	    let finally_free, list = 
-	      add_fields ((name,(size, first_free)) :: allocated_list) new_first_free list in
-	    finally_free, list
+	    (* On récupère tout le touintouin avec comme premier emplacement dispo celui juste au dessus 
+	       (on a gardé de la place pour la variable *)
+	    let finally_free, map = 
+	      add_fields (Smap.add name (size, first_free) allocated_map) new_first_free list in
+	    finally_free, map
       in
       (* On explore effectivement les parents *)
-      let offset, parent_list = explore_parent first_free parents in
+      let offset, parent_map = explore_parent first_free parents in
       (* On ajoute alors les champs en prenant comme point de départ parent_map *)
-      add_fields parent_list offset fields
+      add_fields parent_map offset fields
     in
-    let calculated_size, list = explore 0 self#name in
-    (* On retourne la map pour coller au reste *)
-    let reverted_list = List.map (fun (ident,(size, position)) -> 
-      ident,(size, calculated_size-position-size)) list in
-    positionList <- reverted_list;
+    let calculated_size, map = explore 0 self#name in
+    positionMap <- map;
     size <- calculated_size;
+    (* (\* On créée le code d'initialisation d'une classe *\) *)
+    (* let code =  *)
+    (* initCode <- Smap.fold (fun ident size code ->  *)
+    (*   code  *)
+    (*   ++  comment ("Membre "^ident) *)
+    (*   ++  pushn size) memberListEnv nop; *)
+    (* map <- offsEnv; *)
+    (* declClass <- c; *)
+    (* size <- first_free; *)
 end
 
 (* Une classe : une déclaration, une map des tailles*positions, un code 
@@ -272,6 +252,16 @@ let replace_xhexa string =
   in
   run 0 "" string
   
+let save_fp_ra = 
+      comment " sauvegarde de fp" 
+  ++  push fp
+  ++  comment " sauvegarde de ra"
+  ++  push ra
+let restore_ra_fp = 
+      comment " restauration de ra"
+  ++  lw ra areg (-8, fp) 
+  ++  comment " restauration de fp"
+  ++  lw fp areg (-4, fp)
 
 let print_int = 
       comment " print_int" 
@@ -323,9 +313,9 @@ let rec compile_LVexpr lenv cenv ex = match ex.exprCont with
 	if Smap.mem s lenv then (* Variable locale *)
 	  let offset = Smap.find s lenv in
 	  lw a0 areg (offset, fp)
-	else if List.mem_assoc s cenv then (* Membre d'une classe *)
+	else if Smap.mem s cenv then (* Membre d'une classe *)
 	  let this_offset = Smap.find "this" lenv in
-	  let var_offset = List.assoc s cenv in
+	  let var_offset = Smap.find s cenv in
 	      comment " position de this"
 	  ++  add a0 fp oi this_offset
 	  ++  comment " chargement de la variable"
@@ -343,14 +333,16 @@ let rec compile_LVexpr lenv cenv ex = match ex.exprCont with
 	       comment (" variable locale "^s) 
 	    ++ add a0 fp oi pos 
 	    ++ push a0
-	else if List.mem_assoc s cenv then (* Variable de classe *)
-	  let offset = List.assoc s cenv in 
+	else if Smap.mem s cenv then (* Variable de classe *)
+	  let offset = Smap.find s cenv in 
 	  let this = Smap.find "this" lenv in
 	      comment (" variable de classe "^s)
-	  ++  comment ("  récupération de this en offset "^(string_of_int this))
-	  ++  lw a0 areg (this, fp)
+	  ++  comment "  récupération de this"
+	  ++  li a0 this
+	  ++  add a0 a0 oreg fp
 	  ++  comment ("  récupération de la variable "^s)
-	  ++  sub a0 a0 oi offset
+	  ++  li a1 offset
+	  ++  add a0 a0 oreg a1
 	  ++  push a0
 	else (* Variable globale *)
 	  let lab, _ = try Hashtbl.find genv s with _ -> raise (Error "pas trouvé !") in
@@ -365,7 +357,7 @@ let rec compile_LVexpr lenv cenv ex = match ex.exprCont with
   | ExprDot (e,s) -> 
     (match e.exprTyp with 
     | TypIdent c -> (* On a une classe *)
-      let _, offset = List.assoc s (Hashtbl.find classTable c)#assoc in
+      let _, offset = Smap.find s (Hashtbl.find classTable c)#map in
           comment (" Variable de class "^s)
       ++  compile_LVexpr lenv cenv e
       ++  pop a0              (* on a l'adresse % fp, et l'offset *)
@@ -379,10 +371,7 @@ let rec compile_LVexpr lenv cenv ex = match ex.exprCont with
 and compile_expr lenv cenv ex = match ex.exprCont with
 (* Compile l'expression et place le résultat au sommet de la pile *)
   | ExprInt i -> li a0 i ++ push a0
-  | This -> (* On récupère la position du pointeur vers l'objet *)
-    let thisOffset = Smap.find "this" lenv in
-        lw a0 areg (thisOffset, fp)
-    ++  push a0
+  | This -> assert false
   | Null -> 
         li a0 0
     ++  push a0
@@ -393,9 +382,9 @@ and compile_expr lenv cenv ex = match ex.exprCont with
 	if Smap.mem s lenv then (* Variable locale *)
 	  let offset = Smap.find s lenv in
 	  lw a0 areg (offset, fp)
-	else if List.mem_assoc s cenv then (* Membre d'une classe *)
+	else if Smap.mem s cenv then (* Membre d'une classe *)
 	  let this_offset = Smap.find "this" lenv in
-	  let var_offset = List.assoc s cenv in
+	  let var_offset = Smap.find s cenv in
 	  comment " position de this"
 	  ++  add a0 fp oi this_offset
 	  ++  comment " chargement de la variable"
@@ -416,9 +405,9 @@ and compile_expr lenv cenv ex = match ex.exprCont with
 	if Smap.mem s lenv then (* Variable locale *)
 	  let offset = Smap.find s lenv in
 	  lw a0 areg (offset, fp)
-	else if List.mem_assoc s cenv then (* Membre d'une classe *)
+	else if Smap.mem s cenv then (* Membre d'une classe *)
 	  let this_offset = Smap.find "this" lenv in
-	  let var_offset = List.assoc s cenv in
+	  let var_offset = Smap.find s cenv in
 	      comment " position de this"
 	  ++  add a0 fp oi this_offset
 	  ++  comment " chargement de la variable"
@@ -440,7 +429,7 @@ and compile_expr lenv cenv ex = match ex.exprCont with
 			calcul l'offset de s *)
     (match e.exprTyp with 
     | TypIdent c -> 
-      let _, offset = List.assoc s (Hashtbl.find classTable c)#assoc in
+      let _, offset = Smap.find s (Hashtbl.find classTable c)#map in
           comment (" Variable de class "^s)
       ++  compile_LVexpr lenv cenv e
       ++  pop a0              (* on a l'adresse % fp, et l'offset *)
@@ -451,15 +440,10 @@ and compile_expr lenv cenv ex = match ex.exprCont with
     )
   | ExprEqual (e1,e2) -> (* On compile l'expression e1, c'est une lvalue donc 
 			    le résultat est son adresse *)
-        compile_LVexpr lenv cenv e1
-    ++  comment " calcul de la valeur droite" 
-    ++  compile_expr lenv cenv e2
-    ++  pop a1 
-    ++  pop a0 
-    ++  comment " sauvegarde de la valeur" 
-    ++  sw a1 areg (0, a0)
-    ++  comment " on met le résulat sur la pile"
-    ++  push a1
+    compile_LVexpr lenv cenv e1
+    ++ comment " calcul de la valeur droite" ++ compile_expr lenv cenv e2
+    ++ pop a1 ++ pop a0 
+    ++ comment " sauvegarde de la valeur" ++ sw a1 areg (0, a0)
   | ExprApply (e, p, l) -> ( 		(* cadeau : p profil cherché *)
     match e.exprCont with
     | ExprQident (rf, Ident s) -> (* appel de fonction *)
@@ -632,51 +616,22 @@ let rec compile_ins lenv cenv sp = function
       | None -> pushn 4
       | Some InsDefExpr e -> compile_LVexpr nlenv cenv e
       | Some InsDefIdent (c, elist) -> (* Appel du constructeur *)
-	let tlist = List.map (fun e -> e.exprTyp, false) elist in
-	let plist = Hashtbl.find_all Typer.classCons c in
-	let p = List.find (Typer.eqProf tlist) plist in
-	(* On compile le code qui donne les valeurs des expressions et les 
-	   empile *)
-	let rec codeArgs prof exprl = match (prof, exprl) with
-	  | [], [] -> nop
-	  | (_,rf)::prof', e::exprl' ->
-	    let code = codeArgs prof' exprl' in
-	    if rf 
-	    then code ++ (compile_LVexpr lenv cenv e)
-	    else code ++ (compile_expr lenv cenv e)
-	  | _ -> assert false
-	in
-	let numberOfArgs = List.length elist in
-	(Hashtbl.find classTable c)#init p (codeArgs p elist) numberOfArgs
+	let profile = List.map (fun e -> (e.exprTyp, false)) elist in
+	(Hashtbl.find classTable c)#init profile
     in
     comm ++ rhs, nlenv   
   | InsDef (v, option) ->
-    (
-      let comm = comment (" allocation de la variable "^v.varIdent) in
-      let nlenv = allocate_var v lenv in
-      let rhs = match option with
-	| None -> pushn 4
-	| Some InsDefExpr e -> compile_LVexpr nlenv cenv e
-	| Some InsDefIdent (c, elist) -> (* Appel du constructeur *)
-	  let tlist = List.map (fun e -> e.exprTyp, false) elist in
-	  let plist = Hashtbl.find_all Typer.classCons c in
-	  let p = List.find (Typer.eqProf tlist) plist in
-	  (* On compile le code qui donne les valeurs des expressions et les 
-	     empile *)
-	  let rec codeArgs prof exprl = match (prof, exprl) with
-	    | [], [] -> nop
-	    | (_,rf)::prof', e::exprl' ->
-	      let code = codeArgs prof' exprl' in
-	      if rf 
-	      then code ++ (compile_LVexpr lenv cenv e)
-	      else code ++ (compile_expr lenv cenv e)
-	    | _ -> assert false
-	  in
-	  let numberOfArgs = List.length elist in
-	  (Hashtbl.find classTable c)#init p (codeArgs p elist) numberOfArgs
-      in
-      comm ++ rhs, nlenv  
-    )
+    let comm = comment (" allocation de la variable "^v.varIdent) in
+    let s =  sizeof v.varRef v.varTyp in
+    let nlenv = allocate_var v lenv in
+    let rhs = match option with
+      | None -> pushn s
+      | Some InsDefExpr e -> compile_expr nlenv cenv e
+      | Some InsDefIdent (c, elist) -> (* Appel du constructeur *)
+ 	let profile = List.map (fun e -> (e.exprTyp, false)) elist in
+	(Hashtbl.find classTable c)#init profile
+    in
+    comm ++ rhs, nlenv
   | InsIf (e,i) -> (* astuce de faineant *)
     compile_ins lenv cenv sp (InsIfElse(e,i,InsSemicolon))
   | InsIfElse (e,i1,i2) -> 
@@ -792,7 +747,7 @@ let compile_decl codefun codemain = function
 	    if typ != TypInt then raise (Error "main doit avoir le type int")
 	    else
 	      let aux (code, lenv) ins = 
-		let inscode, nlenv = compile_ins lenv [] 8 ins in
+		let inscode, nlenv = compile_ins lenv Smap.empty 8 ins in
 		code ++ inscode, nlenv
 	      in
 	      let lenv = allocate_args false p.argumentList in
@@ -811,7 +766,7 @@ let compile_decl codefun codemain = function
 	
 	    (* On compile le bloc *)
 	    let aux (code, lenv) ins = 
-	      let inscode, nlenv = compile_ins lenv [] 8 ins in
+	      let inscode, nlenv = compile_ins lenv Smap.empty 8 ins in
 	      code ++ inscode, nlenv
 	    in
 	    (* On créée l'environnement local lié aux arguments *)
@@ -866,11 +821,10 @@ let compile_decl codefun codemain = function
       | Tident s -> (* Constructeur *)
 	(* On récupère son profil *)
 	let profile = List.map (fun arg -> arg.varTyp,arg.varRef) argList in
+	(* On initialise le label du constructeur *)
+	let consLabel = new_label () in
 	(* On l'ajoute dans la table *)
-	let consObject = new consObject s profile in
-	Hashtbl.add consTable s consObject;
-	(* On récupère le label du constructeur *)
-	let consLabel = consObject#label in
+	Hashtbl.add consPosition (s, profile) consLabel;
 	let classEnv = (Hashtbl.find classTable s)#no_size_map in
 	(* Mise à jour de l'env *)
 	let tempEnv = allocate_args true argList in
