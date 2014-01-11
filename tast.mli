@@ -95,7 +95,7 @@ and ins =
 | InsFor of (expr list) * (expr) * (expr list) * ins
 | InsBloc of bloc
 | InsCout of expr_str list
-| InsReturn of (bool * expr option)
+| InsReturn of expr option
 and insDef =
 | InsDefExpr of expr
 | InsDefIdent of string * (expr list)

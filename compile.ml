@@ -210,15 +210,6 @@ class classObject ident = object (self)
       ident,(size, calculated_size-position-size)) list in
     positionList <- reverted_list;
     size <- calculated_size;
-    (* (\* On créée le code d'initialisation d'une classe *\) *)
-    (* let code =  *)
-    (* initCode <- Smap.fold (fun ident size code ->  *)
-    (*   code  *)
-    (*   ++  comment ("Membre "^ident) *)
-    (*   ++  pushn size) memberListEnv nop; *)
-    (* map <- offsEnv; *)
-    (* declClass <- c; *)
-    (* size <- first_free; *)
 end
 
 (* Une classe : une déclaration, une map des tailles*positions, un code 
@@ -325,43 +316,6 @@ let funQvar_to_ident q = match q.qvarIdent with
 
 (******************** Compilation ********************)
 let rec compile_LVexpr lenv cenv ex = match ex.exprCont with
-  | ExprApply (e, p, l) -> (  
-    match e.exprCont with
-    | ExprQident (rf, Ident s) -> (* appel de fonction *)
-      (* On recherche le profil correspondant *)
-      let size, funlab, typList = 
-	List.find (fun (s, l, tl) -> eq_profile tl p)
-	  (Hashtbl.find_all functionsTable s) in
-      let rec sizeArg = function
-	| [] -> 0
-	| (t,r)::l -> (sizeof r t) + sizeArg l
-      in
-      let rec codeArgs prof exprl = match (prof, exprl) with
-	| [], [] -> nop
-	| (_,rf)::prof', e::exprl' ->
-	  let code = codeArgs prof' exprl' in
-	  if rf 
-	  then code ++ (compile_LVexpr lenv cenv e)
-	  else code ++ (compile_expr lenv cenv e)
-	| _ -> assert false
-      in
-      let to_push_or_not_to_push = 
-	if Typer.typEq e.exprTyp TypVoid then
-	  nop
-	else push v0
-      in
-          comment (" appel de la fonction "^s)
-      ++  comment "  construction de la pile"
-      ++  codeArgs p l
-      ++  save_fp_ra
-      ++  comment " saut vers la fonction"
-      ++  jal funlab
-      ++  comment " on est revenu, on dépile par rapport à l'ancien fp"
-      ++  add sp fp oi (sizeArg typList)
-      ++  restore_ra_fp
-      ++  comment "  on met le résultat sur la pile"
-      ++  to_push_or_not_to_push
-  )
   | ExprQident (rf, q) -> begin match q with
     | Ident s when rf -> 
       (* Lâche copier-coller *)
@@ -470,8 +424,7 @@ and compile_expr lenv cenv ex = match ex.exprCont with
 	  ++  comment " chargement de la variable"
 	  ++  lw a0 areg (var_offset, a0)
 	else
-	  let lab, _ = try Hashtbl.find genv s with _ -> 
-	    raise (Error ("pas trouvé "^s)) in 
+	  let lab, _ = try Hashtbl.find genv s with _ -> raise (Error ("pas trouvé "^s)) in 
 	  lw a0 alab lab
       in
       comment (" chargement variable "^s) ++ instruction
@@ -784,8 +737,7 @@ let rec compile_ins lenv cenv sp = function
     let aux (code, lenv) = function
       | ExprStrExpr e -> 
 	let newcode = 
-	  pushn 4 ++ (compile_expr lenv cenv e) ++ pop a0 ++ print_int 
-	  ++ pushn (-4)
+	  (compile_expr lenv cenv e) ++ pop a0 ++ print_int
 	in code ++ newcode, lenv
       | ExprStrStr s ->
 	let lab = new_label () in
@@ -795,17 +747,16 @@ let rec compile_ins lenv cenv sp = function
     let inscode, nlenv = (List.fold_left aux (nop, lenv) l) in
     let comm = comment " cout" in
     comm ++ inscode, nlenv
-  | InsReturn (rf, eopt) -> 
+  | InsReturn eopt -> 
     let expr = match eopt with 
-      | Some e -> 
-	if rf
-	then compile_LVexpr lenv cenv e
-	else compile_expr lenv cenv e
+      | Some e -> compile_expr lenv cenv e
       | None -> nop 
     in
         expr
     ++  comment " quitte la fonction, résultat dans v0"
-    ++  pop v0, lenv
+    ++  pop v0
+    ++  restore_ra_fp
+    ++  jr ra, lenv
 		 
 let compile_decl codefun codemain = function
   | DeclVars vlist -> 
@@ -831,6 +782,7 @@ let compile_decl codefun codemain = function
 	let typ = qvar.qvarTyp in
 	let ident = funQvar_to_ident qvar in
 	let by_ref = qvar.qvarRef in
+	assert (not by_ref);
 	(
 	  (* ident est soit un string tout seul (une fonction),
 	     soit un couple de string (methode ou cons) *)
