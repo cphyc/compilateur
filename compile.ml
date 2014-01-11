@@ -127,29 +127,6 @@ class classObject ident = object (self)
   method no_size_map = 
     List.map (fun (string,(size,position)) -> string,position) positionList
   method build sizeof =
-  (*   (\* On construit les tables des méthodes virtuelles *\) *)
-  (*   let build_vb class_name =  *)
-  (*     (\* On récupère toutes les méthodes de la classe *\) *)
-  (*     let methods = Hashtbl.find_all Typer.classMethods class_name in *)
-  (*     (\* On ne garde que celles qui sont virtuelles *\) *)
-  (*     let virtual_methods = List.filter  *)
-  (* 	(fun m -> (\* On récupère les classes qui sont virtuelles *\) *)
-  (* 	  let(((_,virt),_),_) = Hashtbl.find Typer.methodsTable (class_name, m) in *)
-  (* 	  virt) methods *)
-  (*     in *)
-  (*     (\* On transforme la liste de méthodes en une map de position*méthode *\) *)
-  (*     let map = List.fold_left  *)
-  (* 	(fun virtMet (map, position) -> Smap.add virtMet position map, position+4) *)
-  (* 	Smap.empty virtual_methods  *)
-  (*     in *)
-  (*     (\* On alloue un nombre d'octets dans le segment de donnée, *)
-  (* 	 c'est le nombre de méthodes virtuelles*\) *)
-  (*     let vmLabel = new_label () in *)
-  (*     Hashtbl.add virtualMethodTable class_name map *)
-  (*   in *)
-						
-    (* On construit les positions des variables + du pointeur vers la table 
-       de méthode virtuelle ! *)
     let rec explore first_free classe_name = 
       (* let _ = printf "@.Entrée de explore\tclasse:\t"; *)
       (* print_string classe_name; printf "@."; *)
@@ -208,7 +185,7 @@ class classObject ident = object (self)
     (* On retourne la map pour coller au reste *)
     let reverted_list = List.map (fun (ident,(size, position)) -> 
       ident,(size, calculated_size-position-size)) list in
-    positionList <- reverted_list;
+    positionList <- list;
     size <- calculated_size;
     (* (\* On créée le code d'initialisation d'une classe *\) *)
     (* let code =  *)
@@ -465,8 +442,8 @@ and compile_expr lenv cenv ex = match ex.exprCont with
 	else if List.mem_assoc s cenv then (* Membre d'une classe *)
 	  let this_offset = Smap.find "this" lenv in
 	  let var_offset = List.assoc s cenv in
-	      comment " position de this"
-	  ++  add a0 fp oi this_offset
+	      comment " position du pointeur this"
+	  ++  la a0 areg (this_offset, fp)
 	  ++  comment " chargement de la variable"
 	  ++  lw a0 areg (var_offset, a0)
 	else
@@ -561,8 +538,7 @@ and compile_expr lenv cenv ex = match ex.exprCont with
           comment (" appel de la méthode "^s^" de la classe "^className)
       ++  comment "  construction de la pile"
       ++  codeArgs
-      ++  comment "  sauvegarde de this (compile l'expression de gauche et laisse
-                     le résultat sur la pile"
+      ++  comment "  sauvegarde de this (compile l'expression de gauche et laisse le résultat sur la pile"
       ++  compile_LVexpr lenv cenv e
       ++  comment "  sauvegarde de fp, sp"
       ++  move fp sp
@@ -954,16 +930,6 @@ let compile p ofile =
 	++ label lab 
 	++ dword [0]) genv nop
   in
-  (* let virtualTableCode =  *)
-  (*   Hashtbl.fold *)
-  (*     (fun str (methodList, lab) code ->  *)
-  (* 	(\* On construit une liste de 0 de la taille le nombre de méthode *\) *)
-  (* 	let liste = List.fold_left (fun l _ -> 0::l) [] methodList in *)
-  (* 	   code *)
-  (* 	++ comment (" table de méthode virtuelle de la classe "^str) *)
-  (* 	++ label lab *)
-  (* 	++ dword liste) virtualMethodTable nop *)
-  (* in *)
   let p =
     { text =
 	label "main"
