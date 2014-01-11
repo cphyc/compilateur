@@ -725,19 +725,26 @@ let rec insTyper lenv qv ins = match ins.Ast.insCont with
     (lenv, InsBloc insList)
   | Ast.InsCout s -> 
     (lenv, InsCout (List.map (expr_strTyper lenv) s))
-  | Ast.InsReturn None -> lenv, InsReturn None
+  | Ast.InsReturn None -> 
+        let rf = 
+	  match qv with
+	  | Tident _ -> 
+	    false
+	  | Qvar q  -> q.qvarRef
+	in
+	(lenv, InsReturn (rf, None))
   | Ast.InsReturn (Some e) -> 
-    let ne, rtyp = 
+    let ne, rtyp, rf = 
       match qv with
       | Tident _ -> 
 	raise (Error ("pas de return dans les constructeurs", ins.Ast.insLoc))
       | Qvar q  -> 
 	if q.qvarRef
-	then (exprLVTyper lenv e), q.qvarTyp
-	else (exprTyper lenv e), q.qvarTyp
+	then (exprLVTyper lenv e), q.qvarTyp, q.qvarRef
+	else (exprTyper lenv e), q.qvarTyp, q.qvarRef
     in
     if typIn ne.exprTyp rtyp then
-      (lenv, InsReturn (Some ne))
+      (lenv, InsReturn (rf, Some ne))
     else raise (Error ("wrong return type", ins.Ast.insLoc))
 
 (* Typage des instructions.
