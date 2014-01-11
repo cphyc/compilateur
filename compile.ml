@@ -737,7 +737,6 @@ let compile_decl codefun codemain = function
 	let typ = qvar.qvarTyp in
 	let ident = funQvar_to_ident qvar in
 	let by_ref = qvar.qvarRef in
-	assert (not by_ref);
 	(
 	  (* ident est soit un string tout seul (une fonction),
 	     soit un couple de string (methode ou cons) *)
