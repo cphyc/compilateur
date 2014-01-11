@@ -125,6 +125,9 @@ class classObject ident = object (self)
       print_string "  pos: "; print_int pos; printf "@.";) positionList;
     positionList 
   method no_size_map = 
+    List.iter (fun (name, (size,pos)) ->
+      print_string (name^" - size: "); print_int size;
+      print_string "  pos: "; print_int pos; printf "@.";) positionList;
     List.map (fun (string,(size,position)) -> string,position) positionList
   method build sizeof =
     let rec explore first_free classe_name = 
@@ -185,7 +188,7 @@ class classObject ident = object (self)
     (* On retourne la map pour coller au reste *)
     let reverted_list = List.map (fun (ident,(size, position)) -> 
       ident,(size, calculated_size-position-size)) list in
-    positionList <- list;
+    positionList <- reverted_list;
     size <- calculated_size;
     (* (\* On créée le code d'initialisation d'une classe *\) *)
     (* let code =  *)
@@ -340,7 +343,7 @@ let rec compile_LVexpr lenv cenv ex = match ex.exprCont with
       ++  to_push_or_not_to_push
   )
   | ExprQident (rf, q) -> begin match q with
-    | Ident s when rf -> 
+    | Ident s when rf -> (* Référence vers variable de classe *)
       (* Lâche copier-coller *)
       let instruction =
 	if Smap.mem s lenv then (* Variable locale *)
@@ -359,21 +362,23 @@ let rec compile_LVexpr lenv cenv ex = match ex.exprCont with
       in
       comment (" chargement variable "^s) ++ instruction
       ++ push a0      
-    | Ident s ->
+    | Ident s -> (* Variable de classe *)
       begin
+	let _ = List.iter (fun (name,pos) ->
+	  print_string (name^" - pos: "); Format.print_int pos; printf "@.";) cenv in
 	if Smap.mem s lenv then (* Variable locale *)
 	  let pos = Smap.find s lenv in 
 	       comment (" variable locale "^s) 
 	    ++ add a0 fp oi pos 
 	    ++ push a0
 	else if List.mem_assoc s cenv then (* Variable de classe *)
-	  let offset = List.assoc s cenv in 
-	  let this = Smap.find "this" lenv in
+	  let var_offset = List.assoc s cenv in 
+	  let this_offset = Smap.find "this" lenv in
 	      comment (" variable de classe "^s)
-	  ++  comment ("  récupération de this en offset "^(string_of_int this))
-	  ++  lw a0 areg (this, fp)
+	  ++  comment ("  récupération de this en offset "^(string_of_int this_offset))
+	  ++  lw a0 areg (this_offset, fp)
 	  ++  comment ("  récupération de la variable "^s)
-	  ++  sub a0 a0 oi offset
+	  ++  sub a0 a0 oi var_offset
 	  ++  push a0
 	else (* Variable globale *)
 	  let lab, _ = try Hashtbl.find genv s with _ -> raise (Error "pas trouvé !") in
@@ -389,7 +394,7 @@ let rec compile_LVexpr lenv cenv ex = match ex.exprCont with
     (match e.exprTyp with 
     | TypIdent c -> (* On a une classe *)
       let _, offset = List.assoc s (Hashtbl.find classTable c)#assoc in
-          comment (" Variable de class "^s)
+          comment (" Variable de classe "^s)
       ++  compile_LVexpr lenv cenv e
       ++  pop a0              (* on a l'adresse % fp, et l'offset *)
       ++  add a0 a0 oi offset (* on a dans a0 l'adresse de la variable *)
@@ -435,6 +440,8 @@ and compile_expr lenv cenv ex = match ex.exprCont with
       ++ push a0
     | Ident s -> 
       (* Pas la peine de vérifier que ça a été déclaré, on l'a déjà fait *)
+      let _ = List.iter (fun (name,pos) ->
+	print_string (name^" - pos: "); Format.print_int pos; printf "@.";) cenv in
       let instruction =
 	if Smap.mem s lenv then (* Variable locale *)
 	  let offset = Smap.find s lenv in
@@ -768,9 +775,9 @@ let rec compile_ins lenv cenv sp = function
 	dataMap := Smap.add lab s !dataMap;
 	code ++	print_label lab, lenv
     in
-    let inscode, nlenv = (List.fold_left aux (nop, lenv) l) in
+    let inscode, _ = (List.fold_left aux (nop, lenv) l) in
     let comm = comment " cout" in
-    comm ++ inscode, nlenv
+    comm ++ inscode, lenv
   | InsReturn (rf, eopt) -> 
     let expr = match eopt with 
       | Some e -> 
