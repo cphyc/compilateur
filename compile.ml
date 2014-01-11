@@ -730,7 +730,8 @@ let rec compile_ins lenv cenv sp = function
     let aux (code, lenv) = function
       | ExprStrExpr e -> 
 	let newcode = 
-	  (compile_expr lenv cenv e) ++ pop a0 ++ print_int
+	  pushn 4 ++ (compile_expr lenv cenv e) ++ pop a0 ++ print_int 
+	  ++ pushn (-4)
 	in code ++ newcode, lenv
       | ExprStrStr s ->
 	let lab = new_label () in
