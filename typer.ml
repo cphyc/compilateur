@@ -729,8 +729,7 @@ let rec insTyper lenv qv ins = match ins.Ast.insCont with
         let rf = 
 	  match qv with
 	  | Tident _ -> 
-	    raise (Error ("pas de return dans les constructeurs", 
-			  ins.Ast.insLoc))
+	    false
 	  | Qvar q  -> q.qvarRef
 	in
 	(lenv, InsReturn (rf, None))
