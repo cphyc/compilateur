@@ -187,7 +187,7 @@ for f in exec/*.cpp; do
 	rm -f out
 	score_comp=`expr $score_comp + 1`;
 	# if $timeout $spim -file $mips | grep -v SPIM | grep -v Copyright | grep -v Reserved | grep -v README | grep -v Loaded > out; then
-        if $timeout $mars $mips | tail -n +3 | head -n -1 > out; then
+        if $timeout $mars $mips | tail -n +3 | tail -r | tail -n +2 | tail -r > out; then
 	    score_out=`expr $score_out + 1`;
 	    if cmp --quiet out $expected; then
 		score_test=`expr $score_test + 1`;
