@@ -78,12 +78,13 @@ end
 
 let consTable: (string, consObject) Hashtbl.t = Hashtbl.create 17
 
-class classObject ident = object (self)
+class classObject ident objtbl = object (self)
   val name : string = ident
   val fields = Hashtbl.find_all Typer.classFields ident
   val parents = Hashtbl.find_all Typer.classInheritances ident
   val methods = Hashtbl.find_all Typer.classMethods ident
   val constructors = Hashtbl.find_all Typer.classCons ident
+  val tbl : (string, classObject) Hashtbl.t = objtbl
   val mutable positionList = []
   val mutable size = 0
   method name = name
@@ -91,11 +92,15 @@ class classObject ident = object (self)
   method get_parents = parents
   method size = size
   (* Appelle le constructeur correspondant et tous les autres *)
-  method init (profile : (Tast.typ * bool) list) (argCode:text) (argSize:int)= 
+  method init (profile : (Tast.typ * bool) list) (argCode:text) (argSize:int) = 
     (* Si on a défini un constructeur, on n'en a pas par défaut *)
+    let superConstructor = List.fold_left 
+      (fun code parent -> let parObj = Hashtbl.find tbl parent in
+			  code ++ parObj#init [] nop 0)
+      nop parents in
     match Hashtbl.find_all consTable self#name with
-    | [] -> (* Aucun constructeur, on renvoie le code par défaut, càd rien *)
-      let superConstructor = nop in
+    | [] -> (* Aucun constructeur, on renvoie le code par défaut, 
+	       càd juste la place qu'il faut *)
           comment " constructeur par défaut : allocation de mémoire"
       ++  pushn self#size
       ++  comment " constructeur par défaut : appel des supers constructeurs en chaine"
@@ -119,6 +124,7 @@ class classObject ident = object (self)
       ++  jal constructor#label
       ++  comment "  on restaure fp, ra"
       ++  restore_ra_fp
+      ++  superConstructor
   method assoc =
     (* List.iter (fun (name, (size,pos)) -> *)
     (*   print_string (name^" - size: "); print_int size; *)
@@ -190,15 +196,6 @@ class classObject ident = object (self)
       ident,(size, calculated_size-position-size)) list in
     positionList <- reverted_list;
     size <- calculated_size;
-    (* (\* On créée le code d'initialisation d'une classe *\) *)
-    (* let code =  *)
-    (* initCode <- Smap.fold (fun ident size code ->  *)
-    (*   code  *)
-    (*   ++  comment ("Membre "^ident) *)
-    (*   ++  pushn size) memberListEnv nop; *)
-    (* map <- offsEnv; *)
-    (* declClass <- c; *)
-    (* size <- first_free; *)
 end
 
 (* Une classe : une déclaration, une map des tailles*positions, un code 
@@ -660,7 +657,12 @@ let rec compile_ins lenv cenv sp = function
     let comm = comment (" allocation de la reference "^v.varIdent) in
     let nlenv = allocate_var v lenv in
     let rhs = match option with
-      | None -> pushn 4
+      | None -> (
+	match v.varTyp with
+	| TypIdent c -> (* astuce de fainéant *)
+	  fst (compile_ins lenv cenv sp (InsDef (v, Some (InsDefIdent (c, [])))))
+	| _ -> pushn 4
+      )
       | Some InsDefExpr e -> compile_LVexpr nlenv cenv e
       | Some InsDefIdent (c, elist) -> (* Appel du constructeur *)
 	let tlist = List.map (fun e -> e.exprTyp, false) elist in
@@ -686,7 +688,12 @@ let rec compile_ins lenv cenv sp = function
       let comm = comment (" allocation de la variable "^v.varIdent) in
       let nlenv = allocate_var v lenv in
       let rhs = match option with
-	| None -> pushn 4
+	| None -> (
+	  match v.varTyp with
+	  | TypIdent c -> (* astuce de fainéant *)
+	    fst (compile_ins lenv cenv sp (InsDef (v, Some (InsDefIdent (c, [])))))
+	  | _ -> pushn 4
+	)
 	| Some InsDefExpr e ->  compile_expr nlenv cenv e
 	| Some InsDefIdent (c, elist) -> (* Appel du constructeur *)
 	  let tlist = List.map (fun e -> e.exprTyp, false) elist in
@@ -739,8 +746,9 @@ let rec compile_ins lenv cenv sp = function
     let modify = compile_expr_list l2 in
     let core, pouet = compile_ins lenv cenv sp i in
     (* print_string "i :"; Format.print_int (Smap.find "i" pouet); printf "@."; *)
-    (* print_string "cpt :"; Format.print_int (Smap.find "cpt" pouet); printf "@."; *)
-    (* print_string "j :"; Format.print_int (Smap.find "j" pouet); printf "@."; *)
+    (* print_string "cpt :"; Format.print_int (Smap.find "cpt" pouet); *)
+    (* printf "@."; print_string "j :"; Format.print_int (Smap.find "j" pouet); *)
+    (* printf "@."; *)
     
     let labtest, way_out = new_label (), new_label () in
        comment " initialisation de la boucle for" 
@@ -802,7 +810,7 @@ let compile_decl codefun codemain = function
     process vlist;
     nop, nop
   | DeclClass c -> (* On se contente juste d'ajouter la classe dans la table *)
-    let newClass = new classObject c.className in
+    let newClass = new classObject c.className classTable in
     newClass#build sizeof;
     Hashtbl.add classTable c.className newClass;
     nop, nop
